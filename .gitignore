@@ -1,0 +1,39 @@
+# Laravel
+/vendor
+/node_modules
+/public/hot
+/public/storage
+/storage/*.key
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/logs/*
+/bootstrap/cache/*
+
+# Environment
+.env
+.env.backup
+.env.local
+.env.production
+
+# IDE
+.idea
+.vscode
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+/docker-compose.override.yml
+
+# Database dumps (contains secrets)
+/DB/
+/db/
+/database/*.sql
+*.sql
+
+# Plugin credentials
+/assets/global/uploads/plugin/

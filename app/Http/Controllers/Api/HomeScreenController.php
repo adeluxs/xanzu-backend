@@ -1,0 +1,605 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Enums\ListingReview;
+use App\Http\Controllers\Controller;
+use App\Http\Resources\BannerResource;
+use App\Http\Resources\BrandResource;
+use App\Http\Resources\CategoryResource;
+use App\Http\Resources\CouponResource;
+use App\Http\Resources\ListingResource;
+use App\Http\Resources\ListingReviewResource;
+use App\Http\Resources\ProviderResource;
+use App\Models\Banner;
+use App\Models\Brand;
+use App\Models\Category;
+use App\Models\Coupon;
+use App\Models\Listing;
+use App\Models\ListingReview as ListingReviewModel;
+use App\Models\Provider;
+use App\Traits\ApiResponse;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Validator;
+use Modules\Ai\ListingSearch\BaseClass as AiListingSearch;
+use Modules\Ai\ReviewSummery\BaseClass as AiReviewSummery;
+
+class HomeScreenController extends Controller
+{
+    use ApiResponse;
+
+    /**
+     * App home screen data:
+     *  - Banners
+     *  - Home coupon (single)
+     *  - Trending categories (parent only, not sub-categories)
+     *  - Popular brands
+     *  - Flash-sale products
+     *  - Latest active products
+     *  - Popular products (by sold_count)
+     *  - Discounted products (item-level or attribute-level discount)
+     */
+    public function index(): JsonResponse
+    {
+        // Shared eager-load for product queries
+        $productEagerLoad = [
+            'category:id,name,slug',
+            'brand:id,name,slug,image',
+            'listingAttributes',
+        ];
+
+        // 1. Home coupon (single)
+        $homeCoupon = Coupon::where('status', 1)
+            ->where('expires_at', '>=', now())
+            ->where('is_home', 1)
+            ->first();
+
+        // 2. Banners
+        $banners = Banner::query()
+            ->with('category:id,name,slug,image,description')
+            ->latest()
+            ->get();
+
+        // 3. Trending categories – parent only (parent_id IS NULL)
+        $trendingCategories = Category::active()
+            ->trending()
+            ->isCategory()
+            ->orderBy('order')
+            ->get();
+
+        // 4. Popular brands
+        $popularBrands = Brand::where('status', 1)
+            ->isPopular()
+            ->get();
+
+        // 5. Flash-sale products (active, approved, is_flash = true)
+        $flashSaleProducts = Listing::where('status', 'active')
+            ->where('is_approved', 1)
+            ->where('is_flash', true)
+            ->with($productEagerLoad)
+            ->latest()
+            ->take(6)
+            ->get();
+
+        // Best Selling products (active, approved, ordered by sold_count)
+
+        $bestSellingProducts =
+            Listing::where('status', 'active')
+                ->where('is_approved', 1)
+                ->orderByDesc('sold_count')
+                ->orderByDesc('avg_rating')
+                ->with($productEagerLoad)
+                ->latest()
+                ->take(6)
+                ->get()
+        ;
+
+        // Trending products
+        $trendingProducts =
+            Listing::where('status', 'active')
+                ->where('is_approved', 1)
+                ->orderByDesc('is_trending')
+                ->with($productEagerLoad)
+                ->latest()
+                ->take(6)
+                ->get()
+        ;
+
+        // Latest products (active, approved, ordered by created_at)
+
+        $latestProducts =
+            Listing::where('status', 'active')
+                ->where('is_approved', 1)
+                ->orderByDesc('created_at')
+                ->with($productEagerLoad)
+                ->latest()
+                ->take(6)
+                ->get()
+        ;
+
+        $providers = Provider::where('status', 1)
+            ->latest()
+            ->take(20)
+            ->get();
+
+
+
+        // 5. Flash-sale meta from settings
+        $flashSaleStatus = setting('flash_sale_status');
+        $flashSaleMeta = [
+            'flash_sale_status' => $flashSaleStatus,
+            'flash_sale_start_date' => setting('flash_sale_start_date'),
+            'flash_sale_end_date' => setting('flash_sale_end_date'),
+
+        ];
+
+        return $this->successResponse(
+            data: [
+                'banners' => BannerResource::collection($banners),
+                'coupon' => $homeCoupon ? new CouponResource($homeCoupon) : null,
+                'trending_categories' => CategoryResource::collection($trendingCategories),
+                'popular_brands' => BrandResource::collection($popularBrands),
+                'products' => [
+                    'flash_sale_products' => ListingResource::withDetails($flashSaleProducts),
+                    'trending_products' => ListingResource::withDetails($trendingProducts),
+                    'best_selling_products' => ListingResource::withDetails($bestSellingProducts),
+                    'latest_products' => ListingResource::withDetails($latestProducts),
+                ],
+                'providers' => ProviderResource::collection($providers),
+                'flash_sale_meta' => $flashSaleMeta,
+            ],
+            message: 'Home screen data fetched successfully',
+        );
+    }
+
+    /**
+     * Extract pagination meta from a paginator instance.
+     */
+    private function paginationMeta($paginator): array
+    {
+        return [
+            'current_page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+            'per_page' => $paginator->perPage(),
+            'total' => $paginator->total(),
+        ];
+    }
+
+    private function resolveAiListingFilters(Request $request): array
+    {
+        if (!$request->filled('ai_search')) {
+            return [];
+        }
+
+        try {
+            return (new AiListingSearch())->parse((string) $request->input('ai_search'));
+        } catch (\Throwable $e) {
+            report($e);
+
+            return [];
+        }
+    }
+
+    private function resolveFilterValue(Request $request, array $aiFilters, string $key): mixed
+    {
+        if ($request->filled($key)) {
+            return $request->input($key);
+        }
+
+        return $aiFilters[$key] ?? null;
+    }
+
+    private function reviewSummaryCacheKey(int $listingId): string
+    {
+        return 'listing_review_summary:' . $listingId;
+    }
+
+    public function getCachedReviewSummary(int $listingId): ?string
+    {
+        return Cache::rememberForever($this->reviewSummaryCacheKey($listingId), function () use ($listingId) {
+            $reviews = ListingReviewModel::query()
+                ->where('listing_id', $listingId)
+                ->whereNull('parent_id')
+                ->where('status', ListingReview::Approved)
+                ->whereNotNull('review')
+                ->pluck('review')
+                ->map(static fn($review) => trim((string) $review))
+                ->filter(static fn($review) => $review !== '')
+                ->take(120)
+                ->values()
+                ->all();
+
+            if (empty($reviews)) {
+                return null;
+            }
+
+            try {
+                return (new AiReviewSummery())->summarize($reviews);
+            } catch (\Throwable $e) {
+                report($e);
+
+                return null;
+            }
+        });
+    }
+
+    public function listingFilter(Request $request): JsonResponse
+    {
+        $perPage = max(1, (int) $request->input('per_page', 20));
+        $aiFilters = $this->resolveAiListingFilters($request);
+
+
+        $categoryId = $this->resolveFilterValue($request, $aiFilters, 'category_id');
+        $subcategoryId = $this->resolveFilterValue($request, $aiFilters, 'subcategory_id');
+        $brandId = $this->resolveFilterValue($request, $aiFilters, 'brand_id');
+        $search = $this->resolveFilterValue($request, $aiFilters, 'search');
+        $minPrice = $this->resolveFilterValue($request, $aiFilters, 'min_price');
+        $maxPrice = $this->resolveFilterValue($request, $aiFilters, 'max_price');
+        $rating = $this->resolveFilterValue($request, $aiFilters, 'rating');
+        $providerId = $this->resolveFilterValue($request, $aiFilters, 'provider_id');
+        $type = $this->resolveFilterValue($request, $aiFilters, 'type');
+        $sortByInput = $this->resolveFilterValue($request, $aiFilters, 'sort_by');
+        $sortDirInput = $this->resolveFilterValue($request, $aiFilters, 'sort_dir');
+
+        $listings = Listing::query()
+            ->when($categoryId !== null, function ($q) use ($categoryId) {
+                $q->where('category_id', $categoryId);
+            })
+            ->when($subcategoryId !== null, function ($q) use ($subcategoryId) {
+                $q->where('subcategory_id', $subcategoryId);
+            })
+            ->when($brandId !== null, function ($q) use ($brandId) {
+                $q->where('brand_id', $brandId);
+            })
+            ->when($search !== null, function ($q) use ($search) {
+                $q->where('product_name', 'like', '%' . $search . '%');
+            })
+            ->when($minPrice !== null, function ($q) use ($minPrice) {
+                $q->where('price', '>=', $minPrice);
+            })
+            ->when($maxPrice !== null, function ($q) use ($maxPrice) {
+                $q->where('price', '<=', $maxPrice);
+            })
+            ->when($rating !== null, function ($q) use ($rating) {
+                $q->where('avg_rating', '<=', $rating);
+            })
+            // provider
+            ->when($providerId !== null, function ($q) use ($providerId) {
+                $q->where('seller_id', $providerId);
+            })
+            // additional types: flash | best_selling | trending
+            ->when($type === 'flash', function ($q) {
+                $q->where('is_flash', true);
+            })
+            ->when($type === 'best_selling', function ($q) {
+                $q->orderByDesc('sold_count')->orderByDesc('avg_rating');
+            })
+            ->when($type === 'trending', function ($q) {
+                $q->orderByDesc('is_trending');
+            })
+            // type: latest | popular | discounted
+            ->when($type === 'popular', function ($q) {
+                $q->where('sold_count', '>', 0)->orderByDesc('sold_count');
+            })
+            ->when($type === 'latest', function ($q) {
+                $q->latest();
+            })
+            ->when($type === 'discounted', function ($q) {
+                $q->where(function ($q2) {
+                    $q2->where(function ($q3) {
+                        $q3->where('has_attributes', true)
+                            ->whereHas('listingAttributes', function ($q4) {
+                                $q4->where('discount_amount', '>', 0);
+                            });
+                    })
+                        ->orWhere(function ($q3) {
+                            $q3->where('has_attributes', false)
+                                ->where('discount_type', '!=', 'none')
+                                ->where('discount_value', '>', 0);
+                        });
+                });
+            })
+            ->when($sortByInput !== null, function ($q) use ($sortByInput, $sortDirInput) {
+                $allowed = ['price', 'sold_count', 'avg_rating', 'created_at'];
+                $sortBy = in_array($sortByInput, $allowed, true) ? $sortByInput : 'created_at';
+                $sortDir = $sortDirInput === 'asc' ? 'asc' : 'desc';
+                $q->orderBy($sortBy, $sortDir);
+            }, function ($q) {
+                $q->latest();
+            })
+            ->active()
+            ->where('is_approved', 1)
+            ->with([
+                'category:id,name,slug',
+                'brand:id,name,slug,image',
+                'listingAttributes',
+            ])
+            ->paginate($perPage);
+
+        return $this->successResponse(
+            data: [
+                'listings' => ListingResource::withDetails($listings),
+                'categories' => $request->has('with_categories') ? CategoryResource::collection(Category::active()->isCategory()->orderBy('order')->get()) : null,
+                'ai_filters' => $request->filled('ai_search') ? $aiFilters : null,
+            ],
+            message: 'Listings fetched successfully',
+            meta: $this->paginationMeta($listings),
+        );
+    }
+
+    public function filterData(Request $request): JsonResponse
+    {
+        $aiFilters = $this->resolveAiListingFilters($request);
+
+        $categoryId = $this->resolveFilterValue($request, $aiFilters, 'category_id');
+        $subcategoryId = $this->resolveFilterValue($request, $aiFilters, 'subcategory_id');
+        $brandId = $this->resolveFilterValue($request, $aiFilters, 'brand_id');
+        $search = $this->resolveFilterValue($request, $aiFilters, 'search');
+        $minPrice = $this->resolveFilterValue($request, $aiFilters, 'min_price');
+        $maxPrice = $this->resolveFilterValue($request, $aiFilters, 'max_price');
+        $rating = $this->resolveFilterValue($request, $aiFilters, 'rating');
+        $providerId = $this->resolveFilterValue($request, $aiFilters, 'provider_id');
+
+        $categories = Category::active()->isCategory()->orderBy('order')->get();
+        $brands = Brand::where('status', 1)->get();
+        $providers = Provider::where('status', 1)->latest()->take(20)->get();
+
+        $priceRange = Listing::active()->where('is_approved', 1)
+            ->when($categoryId !== null, function ($q) use ($categoryId) {
+                $q->where('category_id', $categoryId);
+            })->when($subcategoryId !== null, function ($q) use ($subcategoryId) {
+                $q->where('subcategory_id', $subcategoryId);
+            })->when($brandId !== null, function ($q) use ($brandId) {
+                $q->where('brand_id', $brandId);
+            })->when($providerId !== null, function ($q) use ($providerId) {
+                $q->where('seller_id', $providerId);
+            })->when($search !== null, function ($q) use ($search) {
+                $q->where('product_name', 'like', '%' . $search . '%');
+            })->when($minPrice !== null, function ($q) use ($minPrice) {
+                $q->where('price', '>=', $minPrice);
+            })->when($maxPrice !== null, function ($q) use ($maxPrice) {
+                $q->where('price', '<=', $maxPrice);
+            })->when($rating !== null, function ($q) use ($rating) {
+                $q->where('avg_rating', '<=', $rating);
+            })
+            ->selectRaw('MIN(price) as min_price, MAX(price) as max_price')->first();
+
+        return $this->successResponse(
+            data: [
+                'categories' => CategoryResource::withChildren($categories, true),
+                'brands' => BrandResource::collection($brands),
+                'providers' => ProviderResource::collection($providers),
+                'price_range' => [
+                    'min_price' => $priceRange->min_price ?? '0.00',
+                    'max_price' => $priceRange->max_price ?? '0.00',
+                ],
+            ],
+            message: 'Filter data fetched successfully',
+        );
+    }
+
+    public function productDetails(Request $request, $id): JsonResponse
+    {
+        $listing = Listing::where('id', $id)
+            ->active()
+            ->where('is_approved', 1)
+            ->with([
+                'category:id,name,slug',
+                'brand:id,name,slug,image',
+                'provider:id,name,slug,image',
+                'reviews' => function ($q) {
+                    $q->whereNull('parent_id')
+                        ->where('status', 'approved')
+                        ->with([
+                            'buyer',
+                            'reply' => function ($replyQuery) {
+                                $replyQuery->where('status', 'approved')->with('buyer');
+                            },
+                        ])
+                        ->latest();
+                },
+                'approvedReviews:id,listing_id,rating',
+                'listingAttributes' => function ($query) {
+                    $query
+                        ->select('id', 'group', 'label', 'listing_id', 'qty', 'price', 'discount_type', 'final_price', 'discount_amount');
+                },
+            ])
+            ->first();
+
+        if (!$listing) {
+            return $this->errorResponse(
+                'Product not found',
+            );
+        }
+        $request->merge(['fullData' => true]); // To indicate we want full details in the resource
+
+        return $this->successResponse(
+            data: new ListingResource($listing),
+            message: 'Product details fetched successfully',
+        );
+    }
+
+    public function productReviews(Request $request, $id): JsonResponse
+    {
+        $perPage = max(1, (int) $request->input('per_page', 10));
+
+        $listing = Listing::where('id', $id)
+            ->active()
+            ->where('is_approved', 1)
+            ->first();
+
+        if (!$listing) {
+            return $this->errorResponse(
+                'Product not found',
+            );
+        }
+
+        $reviews = $listing->reviews()
+            ->whereNull('parent_id')
+            ->where('status', ListingReview::Approved)
+            ->with([
+                'buyer',
+                'reply' => function ($replyQuery) {
+                    $replyQuery->where('status', ListingReview::Approved)->with('buyer');
+                },
+            ])
+            ->latest()
+            ->paginate($perPage);
+
+        $ratingGroups = $listing->approvedReviews()
+            ->selectRaw('rating, COUNT(*) as total')
+            ->groupBy('rating')
+            ->pluck('total', 'rating');
+
+        $reviewCountByRating = [
+            '1' => (int) ($ratingGroups[1] ?? 0),
+            '2' => (int) ($ratingGroups[2] ?? 0),
+            '3' => (int) ($ratingGroups[3] ?? 0),
+            '4' => (int) ($ratingGroups[4] ?? 0),
+            '5' => (int) ($ratingGroups[5] ?? 0),
+        ];
+
+        return $this->successResponse(
+            data: [
+                'listing_id' => $listing->id,
+                'total_reviews' => (int) $listing->approvedReviews()->count(),
+                'review_count_by_rating' => $reviewCountByRating,
+                'review_summary' => $this->getCachedReviewSummary((int) $listing->id),
+                'reviews' => ListingReviewResource::collection($reviews),
+                'can_review' => auth()->check() && $listing->canReview(auth()->id()),
+            ],
+            message: 'Product reviews fetched successfully',
+            meta: $this->paginationMeta($reviews),
+        );
+    }
+
+    /**
+     * Get all trending categories ordered by order field
+     */
+    public function getTrendingCategories(): JsonResponse
+    {
+        $trendingCategories = Category::active()
+            ->trending()
+            ->isCategory()
+            ->orderBy('order', 'asc')
+            ->get();
+
+        return $this->successResponse(
+            data: CategoryResource::collection($trendingCategories),
+            message: 'Trending categories fetched successfully',
+        );
+    }
+
+    /**
+     * Get all popular brands ordered by popularity
+     */
+    public function getPopularBrands(): JsonResponse
+    {
+        $popularBrands = Brand::where('status', 1)
+            ->isPopular()
+            ->orderBy('name', 'asc')
+            ->get();
+
+        return $this->successResponse(
+            data: BrandResource::collection($popularBrands),
+            message: 'Popular brands fetched successfully',
+        );
+    }
+
+    /**
+     * Get all active providers ordered by name
+     */
+    public function getPopularProviders(): JsonResponse
+    {
+        $popularProviders = Provider::where('status', 1)
+            ->orderBy('name', 'asc')
+            ->get();
+
+        return $this->successResponse(
+            data: ProviderResource::collection($popularProviders),
+            message: 'Popular providers fetched successfully',
+        );
+    }
+
+    public function couponByCode(Request $request, $code): JsonResponse
+    {
+
+        $validator = Validator::make(['code' => $code], [
+            'code' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->validationErrorResponse($validator->errors());
+        }
+
+
+        $code = trim($code);
+
+        $coupon = Coupon::query()
+            ->whereRaw('LOWER(code) = ?', [strtolower($code)])
+            ->first();
+
+        if (!$coupon) {
+            return $this->validationErrorResponse(__('Invalid coupon code.'));
+        }
+
+        if (!($coupon->status ?? 1)) {
+            return $this->validationErrorResponse(__('Coupon is inactive.'));
+        }
+
+        if ($coupon->expires_at && $coupon->expires_at->isPast()) {
+            return $this->validationErrorResponse(__('Coupon has expired.'));
+        }
+
+        if ((int) $coupon->max_use_limit <= (int) $coupon->total_used) {
+            return $this->validationErrorResponse(__('Coupon usage limit exceeded.'));
+        }
+
+        return $this->successResponse(
+            data: new CouponResource($coupon),
+            message: __('Coupon fetched successfully.')
+        );
+    }
+
+    public function providerDetails(Request $request, $id): JsonResponse
+    {
+        $perPage = max(1, (int) $request->input('per_page', 20));
+
+        $provider = Provider::active()->find($id);
+
+        if (!$provider) {
+            return $this->errorResponse(
+                'Provider not found',
+            );
+        }
+
+        $listings = Listing::query()
+            ->where(function ($q) use ($provider) {
+                $q->where('provider_id', $provider->id);
+
+                if ($provider->user_id) {
+                    $q->orWhere('seller_id', $provider->user_id);
+                }
+            })
+            ->active()
+            ->where('is_approved', 1)
+            ->with([
+                'category:id,name,slug',
+                'brand:id,name,slug,image',
+                'listingAttributes',
+            ])
+            ->latest()
+            ->paginate($perPage);
+
+        return $this->successResponse(
+            data: [
+                'provider' => new ProviderResource($provider),
+                'listings' => ListingResource::withDetails($listings),
+            ],
+            message: 'Provider details fetched successfully',
+            meta: $this->paginationMeta($listings),
+        );
+    }
+}

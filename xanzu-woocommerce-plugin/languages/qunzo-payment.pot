@@ -1,0 +1,135 @@
+# Copyright (C) 2024 Tdevs
+# This file is distributed under the same license as the Xanzu Payment Gateway for WooCommerce plugin.
+msgid ""
+msgstr ""
+"Project-Id-Version: Xanzu Payment Gateway for WooCommerce 1.0\n"
+"Report-Msgid-Bugs-To: https://tdevs.co\n"
+"POT-Creation-Date: 2024-11-22 00:00+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: Tdevs <info@tdevs.co>\n"
+"Language-Team: EN <LL@li.org>\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: xanzu-payment.php:40
+#, php-format
+msgid "Xanzu Payment Gateway requires %s to be installed and active."
+msgstr ""
+
+#: xanzu-payment.php:41
+msgid "WooCommerce"
+msgstr ""
+
+#: xanzu-payment.php:80
+msgid "Settings"
+msgstr ""
+
+#: includes/class-xanzu-api-handler.php:100
+msgid "Public key is not configured."
+msgstr ""
+
+#: includes/class-xanzu-api-handler.php:125
+msgid "Failed to get access token."
+msgstr ""
+
+#: includes/class-xanzu-api-handler.php:175
+msgid "Failed to create payment."
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:20
+msgid "Xanzu Payments"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:21
+msgid "Pay with Xanzu."
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:44
+msgid "Enable/Disable"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:46
+msgid "Enable Xanzu Payment Gateway"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:50
+msgid "Title"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:52
+msgid "This controls the title which the user sees during checkout."
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:53
+msgid "Xanzu Payment"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:57
+msgid "Description"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:59
+msgid "This controls the description which the user sees during checkout."
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:60
+msgid "Pay securely through Xanzu Payment Gateway."
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:64
+msgid "API URL"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:66
+msgid "Enter your Xanzu API base URL (e.g., https://xanzu.com/api)"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:74
+msgid "Public Key"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:76
+msgid "Enter your Xanzu Public Key"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:81
+msgid "Secret Key"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:83
+msgid "Enter your Xanzu Secret Key"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:88
+msgid "Sandbox Mode"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:90
+msgid "Enable Sandbox Mode"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:92
+msgid "Enable this to use sandbox/test mode for testing payments."
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:168
+#, php-format
+msgid "Payment error: %s"
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:177
+msgid "Payment error: Invalid response from payment gateway."
+msgstr ""
+
+#: includes/class-xanzu-payment-gateway.php:183
+msgid "Awaiting Xanzu payment"
+msgstr ""
+
+#: includes/class-xanzu-ipn-handler.php:151
+#, php-format
+msgid "Payment received via Xanzu Payment Gateway. Transaction ID: %s"
+msgstr ""
+

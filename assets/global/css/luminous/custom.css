@@ -1,0 +1,3 @@
+.sidebar-menu-item.open .has-submenu-slide .has-submenu-slide-content.open {
+    display: block !important;
+}
