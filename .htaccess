@@ -25,13 +25,13 @@
     RewriteCond %{REQUEST_URI} (.+)/$
     RewriteRule ^ %1 [L,R=301]
 
+    # Serve backend and global assets from assets directory
+    RewriteRule ^backend/(.*)$ assets/backend/$1 [L]
+    RewriteRule ^global/(.*)$ assets/global/$1 [L]
+
     # Send Requests To Front Controller...
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
-
-    # Serve backend and global assets from assets directory
-    RewriteRule ^backend/(.*)$ assets/backend/$1 [L]
-    RewriteRule ^global/(.*)$ assets/global/$1 [L]
 
 </IfModule>
