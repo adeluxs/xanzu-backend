@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\WithdrawAccountController;
 use App\Http\Controllers\Api\WithdrawMoneyController;
+use App\Http\Controllers\Api\SendMoneyController;
 use Illuminate\Support\Facades\Route;
 
 
@@ -87,6 +88,13 @@ Route::prefix('merchant')->group(function () {
         // Withdraw Account
         Route::apiResource('withdraw-account', WithdrawAccountController::class)->only('index', 'show', 'store', 'update', 'destroy');
         Route::post('withdraw', WithdrawMoneyController::class);
+
+        // Send Money / P2P Transfer
+        Route::controller(SendMoneyController::class)->prefix('transfer')->group(function () {
+            Route::get('config', 'config');
+            Route::post('validate', 'validate');
+            Route::post('/', 'store');
+        });
 
         // Settings
         Route::prefix('settings')->controller(SettingsController::class)->middleware('isDemo')->group(function () {

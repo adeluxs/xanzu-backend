@@ -20,10 +20,11 @@ class SendMoneyController extends Controller
     {
         $user = auth()->user();
         $userBalance = $user->balance;
+        $isMerchant = $user->user_type === 'merchant';
 
         return $this->successResponse([
             'user_balance' => $userBalance,
-            'transfer_status' => $user->transfer_status,
+            'transfer_status' => $isMerchant ? 1 : $user->transfer_status,
         ]);
     }
 
@@ -31,7 +32,8 @@ class SendMoneyController extends Controller
     {
         try {
             $data = $request->all();
-            $this->sendMoneyService->validate($data, false);
+            $isMerchant = auth()->user()->user_type === 'merchant';
+            $this->sendMoneyService->validate($data, $isMerchant);
 
             return $this->successWithoutDataResponse(__('Validation passed.'));
         } catch (\Throwable $th) {
@@ -43,7 +45,8 @@ class SendMoneyController extends Controller
     {
         try {
             $data = $request->all();
-            $sendMoney = $this->sendMoneyService->sendMoney($data, false);
+            $isMerchant = auth()->user()->user_type === 'merchant';
+            $sendMoney = $this->sendMoneyService->sendMoney($data, $isMerchant);
 
             return $this->successResponse($sendMoney, __('Send money request has been placed successfully.'));
         } catch (\Throwable $th) {
