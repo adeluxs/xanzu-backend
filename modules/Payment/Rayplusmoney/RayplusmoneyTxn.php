@@ -87,4 +87,51 @@ class RayplusmoneyTxn extends BaseTxn
             'response_text' => $data['response_text'] ?? null,
         ];
     }
+
+    public function withdraw()
+    {
+        $payload = [
+            'commande' => [
+                'amount' => (int) round($this->amount),
+                'top_up_wallet' => 0,
+                'customer' => (string) $this->userPhone,
+                'network' => '',
+                'external_id' => $this->txn,
+                'callback_url' => route('ipn.rayplusmoney', ['reftrn' => encrypt($this->txn)]),
+                'callback_url_method' => 'post_json',
+                'custom_data' => [
+                    'transaction_id' => $this->txn,
+                    'ref' => $this->txn,
+                ],
+            ],
+        ];
+
+        $response = Http::withHeaders([
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' . $this->apiToken,
+            'Apikey' => $this->apiKey,
+        ])->post($this->baseUrl . '/pay/v01/straight/payout', $payload);
+
+        $data = $response->json();
+
+        if (isset($data['response_code']) && $data['response_code'] === '00') {
+            Transaction::tnx($this->txn)->update([
+                'approval_cause' => (string) ($data['token'] ?? ''),
+                'status' => TxnStatus::Pending,
+            ]);
+
+            return true;
+        }
+
+        $user = \App\Models\User::find($this->userId);
+        if ($user) {
+            $user->increment('balance', $this->final_amount);
+        }
+
+        Transaction::tnx($this->txn)->update([
+            'status' => TxnStatus::Failed,
+        ]);
+
+        return false;
+    }
 }

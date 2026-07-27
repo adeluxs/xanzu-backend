@@ -345,13 +345,31 @@ class IpnController extends Controller
             return response()->json(['status' => false, 'message' => 'Invalid callback']);
         }
 
-        $verifyResponse = Http::withHeaders([
-            'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer ' . $apiToken,
-            'Apikey' => $apiKey,
-        ])->get($baseUrl . '/pay/v01/redirect/checkout-invoice/confirm', [
-            'invoiceToken' => $token,
-        ]);
+        $transaction = Transaction::where('approval_cause', $token)->orWhere('tnx', $token)->first();
+
+        if (!$transaction) {
+            return response()->json(['status' => false, 'message' => 'Transaction not found']);
+        }
+
+        $isWithdraw = in_array($transaction->type, [TxnType::Withdraw, TxnType::WithdrawAuto]);
+
+        if ($isWithdraw) {
+            $verifyResponse = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . $apiToken,
+                'Apikey' => $apiKey,
+            ])->get($baseUrl . '/pay/v01/withdrawal/confirm', [
+                'withdrawalToken' => $token,
+            ]);
+        } else {
+            $verifyResponse = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . $apiToken,
+                'Apikey' => $apiKey,
+            ])->get($baseUrl . '/pay/v01/redirect/checkout-invoice/confirm', [
+                'invoiceToken' => $token,
+            ]);
+        }
 
         $verifyData = $verifyResponse->json();
 
@@ -359,22 +377,25 @@ class IpnController extends Controller
             $status = strtolower((string) ($verifyData['status'] ?? ''));
 
             if ($status === 'completed') {
-                $transaction = Transaction::where('approval_cause', $token)->orWhere('tnx', $token)->first();
-
-                if ($transaction && $transaction->status == TxnStatus::Pending) {
+                if ($transaction->status == TxnStatus::Pending) {
                     (new Txn)->update($transaction->tnx, TxnStatus::Success, $transaction->user_id);
 
-                    return response()->json(['status' => true, 'message' => 'Payment successful']);
+                    return response()->json(['status' => true, 'message' => $isWithdraw ? 'Withdrawal successful' : 'Payment successful']);
                 }
             }
 
             if ($status === 'notcompleted') {
-                $transaction = Transaction::where('approval_cause', $token)->orWhere('tnx', $token)->first();
+                if ($transaction->status == TxnStatus::Pending) {
+                    if ($isWithdraw) {
+                        $user = $transaction->user;
+                        if ($user) {
+                            $user->increment('balance', $transaction->final_amount);
+                        }
+                    }
 
-                if ($transaction && $transaction->status == TxnStatus::Pending) {
                     $transaction->update(['status' => TxnStatus::Failed]);
 
-                    return response()->json(['status' => true, 'message' => 'Payment failed']);
+                    return response()->json(['status' => true, 'message' => $isWithdraw ? 'Withdrawal failed' : 'Payment failed']);
                 }
             }
         }

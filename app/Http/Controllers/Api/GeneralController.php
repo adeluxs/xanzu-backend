@@ -268,7 +268,7 @@ class GeneralController extends Controller
 
             // merchant kyc fields
             $merchantKyc = Kyc::where('user_type', 'merchant')->first();
-            $merchantKycFields = $merchantKyc->fields;
+            $merchantKycFields = $merchantKyc?->fields;
 
             $merchantKycData = $merchantKycFields ? dynamicFieldKeyFormat(json_decode($merchantKycFields, true)) : [];
 
