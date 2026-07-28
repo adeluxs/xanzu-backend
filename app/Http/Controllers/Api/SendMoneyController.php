@@ -18,14 +18,30 @@ class SendMoneyController extends Controller
 
     public function config(Request $request)
     {
-        $user = auth()->user();
-        $userBalance = $user->balance;
-        $isMerchant = $user->user_type === 'merchant';
+        try {
+            $user = auth()->user();
 
-        return $this->successResponse([
-            'user_balance' => $userBalance,
-            'transfer_status' => $isMerchant ? 1 : $user->transfer_status,
-        ]);
+            if (!$user) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Unauthorized',
+                ], 401);
+            }
+
+            $userBalance = $user->balance;
+            $isMerchant = $user->user_type === 'merchant';
+
+            return $this->successResponse([
+                'user_balance' => $userBalance,
+                'transfer_status' => $isMerchant ? 1 : $user->transfer_status,
+            ]);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to load transfer config',
+                'error' => config('app.debug') ? $th->getMessage() : null,
+            ], 500);
+        }
     }
 
     public function validate(Request $request)
