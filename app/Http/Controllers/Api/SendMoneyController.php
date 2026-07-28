@@ -44,7 +44,7 @@ class SendMoneyController extends Controller
         }
     }
 
-    public function validate(Request $request)
+    public function validateTransferRequest(Request $request)
     {
         try {
             $data = $request->all();
