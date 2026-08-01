@@ -53,77 +53,103 @@ class ViewServiceProvider extends ServiceProvider
 
             View::composer(['frontend::include.__header', 'frontend::include.user_header', 'frontend::layouts.app', 'frontend::include.__header_auth', 'frontend::user.include.__user_header'], function ($view) {
                 $view->with([
-                    'navigations' => Navigation::where('status', 1)->header()->orderBy('header_position')
-                        ->when(!isPlanModuleEnabled(), function ($query) {
-                            $query->whereNOt('url', 'seller-subscription');
-                        })
-                        ->get(),
-                    'categories' => Category::select(['id', 'name', 'image', 'slug'])->isCategory()->active()->orderBy('order')->get(),
-                    'firstOrderBonus' => auth()->check() ? auth()->user()->transaction()->where('type', TxnType::ProductOrder)->count() == 0 : true,
+                    'navigations' => cache()->remember('navigations.header', 60 * 60, function () {
+                        return Navigation::where('status', 1)->header()->orderBy('header_position')
+                            ->when(!isPlanModuleEnabled(), function ($query) {
+                                $query->whereNOt('url', 'seller-subscription');
+                            })
+                            ->get();
+                    }),
+                    'categories' => cache()->remember('categories.active', 60 * 60, function () {
+                        return Category::select(['id', 'name', 'image', 'slug'])->isCategory()->active()->orderBy('order')->get();
+                    }),
+                    'firstOrderBonus' => auth()->check() ? cache()->remember('first_order_bonus.' . auth()->id(), 60 * 5, function () {
+                        return auth()->user()->transaction()->where('type', TxnType::ProductOrder)->count() == 0;
+                    }) : true,
                 ]);
             });
 
             View::composer(['frontend::user.include.__user_side_nav', 'frontend::include.common.__user-header'], function ($view) {
                 $view->with([
-                    'sellerKyc' => Kyc::sellerVerification()->first(),
-                    'userNavigation' => UserNavigation::orderBy('position')->when(!isPlanModuleEnabled(), function ($query) {
-                        $query->whereNOt('type', 'packages');
-                    })->get(),
+                    'sellerKyc' => cache()->remember('seller_kyc', 60 * 60, function () {
+                        return Kyc::sellerVerification()->first();
+                    }),
+                    'userNavigation' => cache()->remember('user_navigation', 60 * 60, function () {
+                        return UserNavigation::orderBy('position')->when(!isPlanModuleEnabled(), function ($query) {
+                            $query->whereNOt('type', 'packages');
+                        })->get();
+                    }),
                 ]);
             });
 
             View::composer(['frontend::include.__footer'], function ($view) {
-                $rawNavigation = Navigation::where('status', 1)->footer()->orderBy('footer_position');
+                $rawNavigation = cache()->remember('navigation.footer', 60 * 60, function () {
+                    return Navigation::where('status', 1)->footer()->orderBy('footer_position')->get();
+                });
                 $view->with([
-                    'footer_navigation_1' => (clone $rawNavigation)->where('type', 'like', '%' . NavigationType::FooterWidget1->value . '%')->get(),
+                    'footer_navigation_1' => $rawNavigation->where('type', 'like', '%' . NavigationType::FooterWidget1->value . '%'),
                 ]);
             });
 
             View::composer(['frontend::include.__footer'], function ($view) {
                 $view->with([
-                    'socials' => Social::all(),
+                    'socials' => cache()->remember('socials.all', 60 * 60 * 24, function () {
+                        return Social::all();
+                    }),
                 ]);
             });
 
             View::composer(['frontend::*gateway'], function ($view) {
-                $gateways = DepositMethod::where('status', 1)->get();
+                $gateways = cache()->remember('gateways.active', 60 * 60, function () {
+                    return DepositMethod::where('status', 1)->get();
+                });
                 View::share('gateways', $gateways);
             });
 
             View::composer(['frontend::home.include.__latest-items'], function ($view) {
                 if (site_theme() != 'accxone') {
                     $view->with([
-                        'latestItemListing' => Listing::public()->latest()->whereNot('is_flash', 1)->whereNot('is_trending', 1)->take(4)->get(),
+                        'latestItemListing' => cache()->remember('latest_items_listing', 60 * 60, function () {
+                            return Listing::public()->latest()->whereNot('is_flash', 1)->whereNot('is_trending', 1)->take(4)->get();
+                        }),
                     ]);
                 }
             });
 
             View::composer(['frontend::include.common.chat', 'frontend::chat.include.recent-chat', 'frontend::include.user_header', 'frontend::user.include.__user_header', 'frontend::include.__header'], function ($view) {
                 $authUser = auth()->id();
-                // get all chat person
+                if (!$authUser) {
+                    $view->with(['allChats' => collect(), 'unseenChatCount' => 0]);
+                    return;
+                }
+
+                $cacheKey = 'user_chats.' . $authUser;
                 $chattedUserList = [];
-                $allChats = Chat::whereHas('sender')
-                    ->whereHas('receiver')
-                    ->where(function ($query) use ($authUser) {
-                        $query->where('sender_id', $authUser)->orWhere('receiver_id', $authUser);
-                    })
+                $allChats = cache()->remember($cacheKey, 60, function () use ($authUser, &$chattedUserList) {
+                    return Chat::whereHas('sender')
+                        ->whereHas('receiver')
+                        ->where(function ($query) use ($authUser) {
+                            $query->where('sender_id', $authUser)->orWhere('receiver_id', $authUser);
+                        })
 
-                    ->select('sender_id', 'receiver_id', 'created_at', 'message', 'id', 'seen')
-                    ->latest()
-                    ->get()->filter(function ($chat) use (&$chattedUserList) {
-                        $checkId = null;
+                        ->select('sender_id', 'receiver_id', 'created_at', 'message', 'id', 'seen')
+                        ->latest()
+                        ->get()->filter(function ($chat) use (&$chattedUserList) {
+                            $checkId = null;
 
-                        $chat->role == 'sender' ? $checkId = $chat->receiver_id : $checkId = $chat->sender_id;
+                            $chat->role == 'sender' ? $checkId = $chat->receiver_id : $checkId = $chat->sender_id;
 
-                        if (!in_array($checkId, $chattedUserList)) {
-                            $chattedUserList[] = $checkId;
+                            if (!in_array($checkId, $chattedUserList)) {
+                                $chattedUserList[] = $checkId;
 
-                            return $chat;
-                        }
+                                return $chat;
+                            }
 
-                        return false;
+                            return false;
 
-                    });
+                        });
+                });
+
                 $unseenChatCount = $allChats->where('receiver_id', $authUser)->where('seen', false)->count();
 
                 $view->with(['allChats' => $allChats, 'unseenChatCount' => $unseenChatCount]);
@@ -132,20 +158,41 @@ class ViewServiceProvider extends ServiceProvider
             View::composer(['frontend::include.common.notification', 'frontend::include.__header', 'frontend::user.include.__user_header', 'frontend::include.user_header'], function ($view) {
 
                 $authUser = auth()->id();
+                if (!$authUser) {
+                    $view->with([
+                        'latestNotifications' => collect(),
+                        'totalUnreadNotification' => 0,
+                        'totalNotificationCount' => 0,
+                    ]);
+                    return;
+                }
 
-                $__notification = Notification::with('user')->where('for', 'user')->where('user_id', $authUser);
+                $cacheKey = 'user_notifications.' . $authUser;
+                $notificationData = cache()->remember($cacheKey, 60, function () use ($authUser) {
+                    $query = Notification::with('user')->where('for', 'user')->where('user_id', $authUser);
+                    return [
+                        'latest' => $query->latest()->take(10)->get(),
+                        'unread' => (clone $query)->where('read', 0)->count(),
+                        'total' => (clone $query)->count(),
+                    ];
+                });
 
-                $latestNotifications = $__notification->clone()->latest()->take(10)->get();
-                $totalUnreadNotification = $__notification->clone()->where('read', 0)->count();
-                $totalNotificationCount = $__notification->clone()->get()->count();
-                $view->with(['latestNotifications' => $latestNotifications, 'totalUnreadNotification' => $totalUnreadNotification, 'totalNotificationCount' => $totalNotificationCount]);
+                $view->with([
+                    'latestNotifications' => $notificationData['latest'],
+                    'totalUnreadNotification' => $notificationData['unread'],
+                    'totalNotificationCount' => $notificationData['total'],
+                ]);
 
             });
 
             View::composer(['*'], function ($view) {
                 $view->with([
-                    'currencySymbol' => setting('currency_symbol', 'global'),
-                    'currency' => setting('site_currency', 'global'),
+                    'currencySymbol' => cache()->remember('currency_symbol', 60 * 60 * 24, function () {
+                        return setting('currency_symbol', 'global');
+                    }),
+                    'currency' => cache()->remember('site_currency', 60 * 60 * 24, function () {
+                        return setting('site_currency', 'global');
+                    }),
                 ]);
             });
 

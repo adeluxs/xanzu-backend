@@ -57,6 +57,26 @@ class SendMoneyController extends Controller
         }
     }
 
+    public function lookupRecipient(Request $request)
+    {
+        try {
+            $request->validate([
+                'phone' => 'required|string',
+            ]);
+
+            $phone = $request->input('phone');
+            $result = $this->sendMoneyService->lookupRecipient($phone);
+
+            if (!$result) {
+                return $this->notFoundResponse('Recipient not found.');
+            }
+
+            return $this->successResponse($result);
+        } catch (\Throwable $th) {
+            return $this->validationErrorResponse($th->getMessage());
+        }
+    }
+
     public function store(Request $request)
     {
         try {

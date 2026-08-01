@@ -44,6 +44,7 @@ Route::post('withdraw', WithdrawMoneyController::class);
 // Send Money / P2P Transfer
 Route::controller(\App\Http\Controllers\Api\SendMoneyController::class)->prefix('transfer')->middleware('check_feature:user_transfer,kyc_user_transfer')->group(function () {
     Route::get('config', 'config');
+    Route::get('lookup', 'lookupRecipient');
     Route::post('validate', 'validateTransferRequest');
     Route::post('/', 'store');
 });

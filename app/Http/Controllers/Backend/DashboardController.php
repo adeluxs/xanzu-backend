@@ -101,12 +101,12 @@ class DashboardController extends Controller
         $browser = $loginActivities->groupBy('browser')->map->count()->toArray();
         $platform = $loginActivities->groupBy('platform')->map->count()->toArray();
 
-        $country = User::all()->groupBy('country')->map(function ($country) {
-            return $country->count();
-        })->toArray();
-
-        arsort($country);
-        $country = array_slice($country, 0, 5);
+        $country = User::select('country', DB::raw('count(*) as count'))
+            ->groupBy('country')
+            ->orderByDesc('count')
+            ->limit(5)
+            ->pluck('count', 'country')
+            ->toArray();
 
         $symbol = setting('currency_symbol', 'global');
 

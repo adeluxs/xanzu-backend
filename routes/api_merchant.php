@@ -92,6 +92,7 @@ Route::prefix('merchant')->group(function () {
         // Send Money / P2P Transfer
         Route::controller(SendMoneyController::class)->prefix('transfer')->group(function () {
             Route::get('config', 'config');
+            Route::get('lookup', 'lookupRecipient');
             Route::post('validate', 'validateTransferRequest');
             Route::post('/', 'store');
         });

@@ -28,7 +28,10 @@ class SendMoneyService
             throw new ValidationException($validator, $validator->errors()->first());
         }
 
-        $recipient = User::where('phone', $data['recipient_phone'])->first();
+        $normalizedPhone = $this->normalizePhone($data['recipient_phone']);
+        $data['recipient_phone'] = $normalizedPhone;
+
+        $recipient = User::where('phone', $normalizedPhone)->first();
 
         if (!$recipient) {
             throw ValidationException::withMessages(['recipient_phone' => __('Recipient not found.')]);
@@ -55,12 +58,51 @@ class SendMoneyService
         }
     }
 
+    public function normalizePhone(string $phone): string
+    {
+        if (str_starts_with($phone, '+')) {
+            return $phone;
+        }
+
+        $sender = auth()->user();
+        if ($sender && $sender->country) {
+            $dialCode = getCountryData($sender->country, 'dial_code');
+            if ($dialCode) {
+                return $dialCode . $phone;
+            }
+        }
+
+        return '+' . ltrim($phone, '0');
+    }
+
+    public function lookupRecipient(string $phone): ?array
+    {
+        $normalizedPhone = $this->normalizePhone($phone);
+
+        $recipient = User::where('phone', $normalizedPhone)
+            ->orWhere('phone', 'LIKE', '%' . ltrim($phone, '0'))
+            ->first();
+
+        if (!$recipient) {
+            return null;
+        }
+
+        return [
+            'full_name' => $recipient->full_name,
+            'first_name' => $recipient->first_name,
+            'last_name' => $recipient->last_name,
+            'phone' => $recipient->phone,
+            'status' => $recipient->status,
+        ];
+    }
+
     public function sendMoney(array $data, bool $isAgent = false): array
     {
         $this->validate($data, $isAgent);
 
         $sender = auth()->user();
-        $recipient = User::where('phone', $data['recipient_phone'])->first();
+        $recipientPhone = $this->normalizePhone($data['recipient_phone']);
+        $recipient = User::where('phone', $recipientPhone)->first();
         $amount = round((float) $data['amount'], 2);
         $charge = 0;
         $finalAmount = $amount;
