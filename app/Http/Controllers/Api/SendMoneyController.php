@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\SendMoneyService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class SendMoneyController extends Controller
 {
@@ -22,6 +23,11 @@ class SendMoneyController extends Controller
             $user = auth()->user();
 
             if (!$user) {
+                Log::warning('SendMoneyController@config: Unauthorized request', [
+                    'ip' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                ]);
+
                 return response()->json([
                     'status' => false,
                     'message' => 'Unauthorized',
@@ -31,11 +37,25 @@ class SendMoneyController extends Controller
             $userBalance = $user->balance;
             $isMerchant = $user->user_type === 'merchant';
 
-            return $this->successResponse([
+            $responseData = [
                 'user_balance' => $userBalance,
                 'transfer_status' => $isMerchant ? 1 : $user->transfer_status,
+            ];
+
+            Log::info('SendMoneyController@config: Success', [
+                'user_id' => $user->id,
+                'user_type' => $user->user_type,
+                'balance' => $userBalance,
+                'transfer_status' => $responseData['transfer_status'],
             ]);
+
+            return $this->successResponse($responseData);
         } catch (\Throwable $th) {
+            Log::error('SendMoneyController@config: Failed', [
+                'error' => $th->getMessage(),
+                'trace' => $th->getTraceAsString(),
+            ]);
+
             return response()->json([
                 'status' => false,
                 'message' => 'Failed to load transfer config',
@@ -48,11 +68,31 @@ class SendMoneyController extends Controller
     {
         try {
             $data = $request->all();
-            $isMerchant = auth()->user()->user_type === 'merchant';
+            $user = auth()->user();
+            $isMerchant = $user?->user_type === 'merchant';
+
+            Log::info('SendMoneyController@validateTransferRequest: Request received', [
+                'user_id' => $user?->id,
+                'user_type' => $user?->user_type,
+                'recipient_phone' => $data['recipient_phone'] ?? null,
+                'amount' => $data['amount'] ?? null,
+            ]);
+
             $this->sendMoneyService->validate($data, $isMerchant);
+
+            Log::info('SendMoneyController@validateTransferRequest: Validation passed', [
+                'user_id' => $user?->id,
+                'recipient_phone' => $data['recipient_phone'] ?? null,
+            ]);
 
             return $this->successWithoutDataResponse(__('Validation passed.'));
         } catch (\Throwable $th) {
+            Log::warning('SendMoneyController@validateTransferRequest: Validation failed', [
+                'user_id' => auth()->id(),
+                'error' => $th->getMessage(),
+                'request_data' => $request->all(),
+            ]);
+
             return $this->validationErrorResponse($th->getMessage());
         }
     }
@@ -60,14 +100,26 @@ class SendMoneyController extends Controller
     public function lookupRecipient(Request $request)
     {
         try {
+            $phone = $request->input('phone');
+            $user = auth()->user();
+
+            Log::info('SendMoneyController@lookupRecipient: Request received', [
+                'user_id' => $user?->id,
+                'lookup_phone' => $phone,
+            ]);
+
             $request->validate([
                 'phone' => 'required|string',
             ]);
 
-            $phone = $request->input('phone');
             $result = $this->sendMoneyService->lookupRecipient($phone);
 
             if (!$result) {
+                Log::info('SendMoneyController@lookupRecipient: Recipient not found', [
+                    'user_id' => $user?->id,
+                    'lookup_phone' => $phone,
+                ]);
+
                 return response()->json([
                     'status' => false,
                     'message' => 'Recipient not found.',
@@ -75,8 +127,22 @@ class SendMoneyController extends Controller
                 ], 200);
             }
 
+            Log::info('SendMoneyController@lookupRecipient: Recipient found', [
+                'user_id' => $user?->id,
+                'lookup_phone' => $phone,
+                'recipient_id' => $result['id'] ?? null,
+                'recipient_name' => $result['full_name'] ?? null,
+            ]);
+
             return $this->successResponse($result);
         } catch (\Throwable $th) {
+            Log::error('SendMoneyController@lookupRecipient: Error', [
+                'user_id' => auth()->id(),
+                'lookup_phone' => $request->input('phone'),
+                'error' => $th->getMessage(),
+                'trace' => $th->getTraceAsString(),
+            ]);
+
             return $this->validationErrorResponse($th->getMessage());
         }
     }
@@ -85,11 +151,34 @@ class SendMoneyController extends Controller
     {
         try {
             $data = $request->all();
-            $isMerchant = auth()->user()->user_type === 'merchant';
+            $user = auth()->user();
+            $isMerchant = $user?->user_type === 'merchant';
+
+            Log::info('SendMoneyController@store: Request received', [
+                'user_id' => $user?->id,
+                'user_type' => $user?->user_type,
+                'recipient_phone' => $data['recipient_phone'] ?? null,
+                'amount' => $data['amount'] ?? null,
+            ]);
+
             $sendMoney = $this->sendMoneyService->sendMoney($data, $isMerchant);
+
+            Log::info('SendMoneyController@store: Success', [
+                'user_id' => $user?->id,
+                'transaction_tnx' => $sendMoney['tnx'] ?? null,
+                'recipient_phone' => $data['recipient_phone'] ?? null,
+                'amount' => $data['amount'] ?? null,
+            ]);
 
             return $this->successResponse($sendMoney, __('Send money request has been placed successfully.'));
         } catch (\Throwable $th) {
+            Log::error('SendMoneyController@store: Failed', [
+                'user_id' => auth()->id(),
+                'error' => $th->getMessage(),
+                'trace' => $th->getTraceAsString(),
+                'request_data' => $request->all(),
+            ]);
+
             return $this->validationErrorResponse($th->getMessage());
         }
     }
