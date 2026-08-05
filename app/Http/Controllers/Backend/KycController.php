@@ -143,8 +143,12 @@ class KycController extends Controller
      */
     public function destroy($id)
     {
-
         $kyc = Kyc::find($id);
+
+        if (!$kyc) {
+            notify()->error(__('KYC not found.'));
+            return to_route('admin.kyc-form.index');
+        }
 
         $kyc->delete();
         notify()->success(__('KYC deleted successfully!'));

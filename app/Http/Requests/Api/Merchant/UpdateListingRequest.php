@@ -63,6 +63,31 @@ class UpdateListingRequest extends FormRequest
         });
     }
 
+    protected function prepareForValidation(): void
+    {
+        $nullableIntFields = ['delivery_speed', 'quantity'];
+        $nullableFloatFields = ['discount_value', 'shipping_charge'];
+        $nullableStringFields = ['delivery_speed_unit', 'shipping_charge_type'];
+
+        foreach ($nullableIntFields as $field) {
+            if ($this->filled($field) && $this->input($field) === '') {
+                $this->merge([$field => null]);
+            }
+        }
+
+        foreach ($nullableFloatFields as $field) {
+            if ($this->filled($field) && $this->input($field) === '') {
+                $this->merge([$field => null]);
+            }
+        }
+
+        foreach ($nullableStringFields as $field) {
+            if ($this->filled($field) && $this->input($field) === '') {
+                $this->merge([$field => null]);
+            }
+        }
+    }
+
     public function hasAttributes(): bool
     {
         return $this->input('type') === 'physical' && $this->boolean('has_attributes');

@@ -13,9 +13,34 @@ $dryRun = in_array('--dry-run', $argv, true);
 $forceUserData = in_array('--force-user-data', $argv, true);
 $skipAnalytics = in_array('--skip-analytics', $argv, true);
 
-$sqlFile = __DIR__ . '/../DB/xanzu.sql';
-if (!file_exists($sqlFile)) {
-    fwrite(STDERR, "SQL file not found: $sqlFile\n");
+$sqlFile = null;
+
+foreach ($argv as $index => $arg) {
+    if ($arg === '--sql' && isset($argv[$index + 1])) {
+        $sqlFile = $argv[$index + 1];
+        break;
+    }
+}
+
+if ($sqlFile === null) {
+    $candidates = [
+        __DIR__ . '/../DB/xanzu.sql',
+        __DIR__ . '/../../DB/xanzu.sql',
+        __DIR__ . '/../backend-xanzu/DB/xanzu.sql',
+        getcwd() . '/DB/xanzu.sql',
+        getcwd() . '/backend-xanzu/DB/xanzu.sql',
+    ];
+
+    foreach ($candidates as $candidate) {
+        if (file_exists($candidate)) {
+            $sqlFile = $candidate;
+            break;
+        }
+    }
+}
+
+if ($sqlFile === null || !file_exists($sqlFile)) {
+    fwrite(STDERR, "SQL file not found. Use --sql /path/to/xanzu.sql to specify it.\n");
     exit(1);
 }
 

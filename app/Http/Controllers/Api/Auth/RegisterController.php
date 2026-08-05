@@ -35,7 +35,8 @@ class RegisterController extends Controller
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'confirmed', Password::defaults()],
             'username' => [Rule::requiredIf($usernameRequired), 'string', 'alpha_num', 'max:255', 'unique:users,username'],
-            'otp_id' => 'required|exists:phone_otps,id',
+            'otp_id' => [Rule::requiredIf(setting('otp_verification', 'permission')), 'exists:phone_otps,id'],
+            'dial_code' => [Rule::requiredIf(!setting('otp_verification', 'permission')), 'exists:countries,dial_code'],
             'invite' => [Rule::requiredIf($referralCodeRequired), 'nullable', 'exists:users,referral_code'],
             'gender' => [Rule::requiredIf($genderRequired), 'nullable', 'in:male,female,other', 'max:255'],
             'i_agree' => 'required',
@@ -55,10 +56,13 @@ class RegisterController extends Controller
                 ? generateUniqueUsername(trim($request->first_name . ' ' . $request->last_name))
                 : $request->username;
 
-            $phoneOtp = PhoneOtp::with('country')->whereKey($request->otp_id)->where('is_verified', true)->first();
+            $phoneOtp = null;
+            if (setting('otp_verification', 'permission')) {
+                $phoneOtp = PhoneOtp::with('country')->whereKey($request->otp_id)->where('is_verified', true)->first();
 
-            if (!$phoneOtp) {
-                return $this->errorResponse('Invalid OTP verification.');
+                if (!$phoneOtp) {
+                    return $this->errorResponse('Invalid OTP verification.');
+                }
             }
 
             $country = $phoneOtp->country ?? null;
@@ -68,7 +72,12 @@ class RegisterController extends Controller
             } else {
                 $countryName = $country->name;
             }
-            $phone = formatPhoneNumber($phoneOtp->phone, $phoneOtp->dial_code, true, false);
+
+            if ($phoneOtp) {
+                $phone = formatPhoneNumber($phoneOtp->phone, $phoneOtp->dial_code, true, false);
+            } else {
+                $phone = formatPhoneNumber($request->phone, $request->dial_code, true, false);
+            }
 
             // Create user account
             DB::beginTransaction();
@@ -81,7 +90,7 @@ class RegisterController extends Controller
                 'password' => Hash::make($request->password),
                 'country' => $countryName,
                 'phone' => $phone,
-                'phone_verified_at' => $phoneOtp->updated_at,
+                'phone_verified_at' => $phoneOtp ? $phoneOtp->updated_at : now(),
             ];
 
             if (getPageSetting('gender_show')) {
@@ -102,10 +111,11 @@ class RegisterController extends Controller
 
             LoginActivities::add($user->id);
 
-            DB::commit();
+            if ($phoneOtp) {
+                $phoneOtp->delete();
+            }
 
-            // delete otp record
-            $phoneOtp->delete();
+            DB::commit();
 
             return $this->successResponse([
                 'token' => $user->createToken('auth_token')->plainTextToken,

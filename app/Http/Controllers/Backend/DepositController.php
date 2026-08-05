@@ -103,7 +103,7 @@ class DepositController extends Controller
             'minimum_deposit' => $input['minimum_deposit'],
             'maximum_deposit' => $input['maximum_deposit'],
             'status' => $input['status'],
-            'field_options' => ($input['field_options']),
+            'field_options' => $input['field_options'] ?? null,
             'payment_details' => isset($input['payment_details']) ? Purifier::clean(htmlspecialchars_decode($input['payment_details'])) : null,
         ];
 

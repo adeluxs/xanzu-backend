@@ -68,7 +68,11 @@ class SendMoneyController extends Controller
             $result = $this->sendMoneyService->lookupRecipient($phone);
 
             if (!$result) {
-                return $this->notFoundResponse('Recipient not found.');
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Recipient not found.',
+                    'data' => null,
+                ], 200);
             }
 
             return $this->successResponse($result);
