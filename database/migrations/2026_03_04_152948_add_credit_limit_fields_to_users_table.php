@@ -25,7 +25,7 @@ return new class extends Migration
                 $table->decimal('remaining_credit_limit_amount', 15, 2)->default(0)->after('used_credit_limit_amount');
             }
 
-            if (Schema::hasColumn('users', 'current_credit_limit_id')) {
+            if (Schema::hasTable('credit_limits') && Schema::hasColumn('users', 'current_credit_limit_id')) {
                 $table->foreign('current_credit_limit_id')
                     ->references('id')
                     ->on('credit_limits')
