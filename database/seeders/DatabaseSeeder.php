@@ -21,6 +21,8 @@ class DatabaseSeeder extends Seeder
             NavigationsSeeder::class,
             LandingContentsSeeder::class,
             LandingPagesSeeder::class,
+            CategoriesSeeder::class,
+            ListingsSeeder::class,
         ]);
     }
 }
