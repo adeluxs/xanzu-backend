@@ -21,14 +21,14 @@ return new class extends Migration
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
-            DB::statement('ALTER TABLE `credit_limits` ADD PRIMARY KEY (`id`)');
-            DB::statement('ALTER TABLE `credit_limits` MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT');
-
-        } else {
-            Schema::table('credit_limits', function (Blueprint $table) {
-                // Table already exists, add missing columns if needed
-            });
         }
+
+        $hasPrimaryKey = DB::select("SHOW KEYS FROM `credit_limits` WHERE Key_name = 'PRIMARY'");
+        if (empty($hasPrimaryKey)) {
+            DB::statement('ALTER TABLE `credit_limits` ADD PRIMARY KEY (`id`)');
+        }
+
+        DB::statement('ALTER TABLE `credit_limits` MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT');
     }
 
     public function down(): void
