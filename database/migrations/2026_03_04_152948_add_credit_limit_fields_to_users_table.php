@@ -3,7 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -23,28 +22,12 @@ return new class extends Migration
                 $table->decimal('remaining_credit_limit_amount', 15, 2)->default(0)->after('used_credit_limit_amount');
             }
         });
-
-        if (Schema::hasTable('credit_limits')) {
-            $hasPrimaryKey = DB::select("SHOW KEYS FROM `credit_limits` WHERE Key_name = 'PRIMARY' AND Column_name = 'id'");
-            if (!empty($hasPrimaryKey) && Schema::hasColumn('users', 'current_credit_limit_id')) {
-                Schema::table('users', function (Blueprint $table) {
-                    $table->foreign('current_credit_limit_id')
-                        ->references('id')
-                        ->on('credit_limits')
-                        ->nullOnDelete();
-                });
-            }
-        }
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         if (Schema::hasColumn('users', 'current_credit_limit_id')) {
             Schema::table('users', function (Blueprint $table) {
-                $table->dropForeign(['current_credit_limit_id']);
                 $table->dropColumn([
                     'current_credit_limit_id',
                     'credit_limit_amount',
