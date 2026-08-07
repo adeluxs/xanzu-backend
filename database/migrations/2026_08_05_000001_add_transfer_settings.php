@@ -11,29 +11,29 @@ return new class extends Migration
     {
         DB::table('settings')->insert([
             [
-                'key' => 'transfer_global_status',
-                'value' => '1',
+                'name' => 'transfer_global_status',
+                'val' => '1',
                 'type' => 'boolean',
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
             [
-                'key' => 'transfer_default_buyer',
-                'value' => '1',
+                'name' => 'transfer_default_buyer',
+                'val' => '1',
                 'type' => 'boolean',
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
             [
-                'key' => 'transfer_default_merchant',
-                'value' => '1',
+                'name' => 'transfer_default_merchant',
+                'val' => '1',
                 'type' => 'boolean',
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
             [
-                'key' => 'transfer_require_kyc',
-                'value' => '0',
+                'name' => 'transfer_require_kyc',
+                'val' => '0',
                 'type' => 'boolean',
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -43,7 +43,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::table('settings')->whereIn('key', [
+        DB::table('settings')->whereIn('name', [
             'transfer_global_status',
             'transfer_default_buyer',
             'transfer_default_merchant',
