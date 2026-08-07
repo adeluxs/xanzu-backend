@@ -124,4 +124,9 @@ class SettingController extends Controller
     {
         return view('backend.setting.seo-meta');
     }
+
+    public function transferSetting()
+    {
+        return view('backend.settings.transfer');
+    }
 }

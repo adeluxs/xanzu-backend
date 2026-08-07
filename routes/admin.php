@@ -37,6 +37,7 @@ use App\Http\Controllers\Backend\TemplateController;
 use App\Http\Controllers\Backend\TestimonialController;
 use App\Http\Controllers\Backend\ThemeController;
 use App\Http\Controllers\Backend\TicketController;
+use App\Http\Controllers\Backend\TransferLimitController;
 use App\Http\Controllers\Backend\TransactionController;
 use App\Http\Controllers\Backend\UserController;
 use App\Http\Controllers\Backend\UserNavigationController;
@@ -328,6 +329,7 @@ Route::group(['prefix' => 'settings', 'as' => 'settings.', 'controller' => Setti
     Route::get('mail', 'mailSetting')->name('mail');
     Route::post('mail-connection-test', 'mailConnectionTest')->name('mail.connection.test');
     Route::post('update', 'update')->name('update');
+    Route::get('transfer', 'transferSetting')->name('transfer');
 
     Route::get('plugin/{name}', [PluginController::class, 'plugin'])->name('plugin');
     Route::get('plugin-data/{id}', [PluginController::class, 'pluginData'])->name('plugin.data');
@@ -431,5 +433,8 @@ Route::post('password-update', [AppController::class, 'passwordUpdate'])->name('
 
 Route::get('application-info', [AppController::class, 'applicationInfo'])->name('application-info');
 Route::get('clear-cache', [AppController::class, 'clearCache'])->name('clear-cache');
+
+// Transfer Limits
+Route::resource('transfer-limit', TransferLimitController::class)->only('index', 'store', 'update', 'destroy')->parameter('transfer-limit', 'transferLimit');
 
 Route::post('logout', [AuthController::class, 'logout'])->name('logout')->withoutMiddleware('isDemo');

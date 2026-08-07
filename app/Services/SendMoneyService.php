@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\TxnStatus;
 use App\Enums\TxnType;
 use App\Facades\Txn\Txn;
+use App\Models\TransferLimit;
 use App\Models\User;
 use App\Traits\NotifyTrait;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,8 @@ class SendMoneyService
 {
     use NotifyTrait;
 
+    public function __construct(private TransferLimitService $transferLimitService) {}
+
     public function validate(array $data, bool $isAgent = false): void
     {
         $sender = auth()->user();
@@ -26,6 +29,29 @@ class SendMoneyService
             'recipient_phone' => $data['recipient_phone'] ?? null,
             'amount' => $data['amount'] ?? null,
         ]);
+
+        if (setting('transfer_global_status', 'permission') != '1') {
+            Log::warning('SendMoneyService@validate: Global transfer disabled', [
+                'user_id' => $sender?->id,
+            ]);
+            throw ValidationException::withMessages(['transfer' => __('Transfers are temporarily disabled globally.')]);
+        }
+
+        if (!$isAgent && !$sender->transfer_status) {
+            Log::warning('SendMoneyService@validate: Transfer disabled for user', [
+                'user_id' => $sender?->id,
+                'transfer_status' => $sender->transfer_status,
+            ]);
+            throw ValidationException::withMessages(['transfer' => __('Transfer is not enabled for your account.')]);
+        }
+
+        if (setting('transfer_require_kyc', 'permission') == '1' && !$sender->kyc) {
+            Log::warning('SendMoneyService@validate: KYC required but not verified', [
+                'user_id' => $sender?->id,
+                'kyc_status' => $sender->kyc,
+            ]);
+            throw ValidationException::withMessages(['transfer' => __('KYC verification is required to send money.')]);
+        }
 
         $rules = [
             'recipient_phone' => 'required|string',
@@ -75,14 +101,6 @@ class SendMoneyService
                 'user_id' => $sender?->id,
             ]);
             throw ValidationException::withMessages(['recipient_phone' => __('You cannot send money to yourself.')]);
-        }
-
-        if (!$isAgent && !$sender->transfer_status) {
-            Log::warning('SendMoneyService@validate: Transfer disabled for user', [
-                'user_id' => $sender?->id,
-                'transfer_status' => $sender->transfer_status,
-            ]);
-            throw ValidationException::withMessages(['transfer' => __('Transfer is not enabled for your account.')]);
         }
 
         $amount = (float) $data['amount'];
@@ -187,6 +205,7 @@ class SendMoneyService
         ]);
 
         $this->validate($data, $isAgent);
+        $this->transferLimitService->enforce($sender, $amount);
 
         $recipientPhone = $this->normalizePhone($data['recipient_phone']);
         $recipient = User::where('phone', $recipientPhone)->first();
