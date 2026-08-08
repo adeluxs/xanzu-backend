@@ -57,6 +57,11 @@
         ],
         "files": [
             "app/helpers.php"
+        ],
+        "exclude-from-classmap": [
+            "/modules/**/tests/",
+            "/modules/**/test/",
+            "/modules/**/Tests/"
         ]
     },
     "autoload-dev": {
@@ -98,6 +103,12 @@
         ],
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
+        ],
+        "autoload-lint": [
+            "@php scripts/check-psr4.php"
+        ],
+        "pre-autoload-dump": [
+            "@php scripts/check-psr4.php"
         ]
     },
     "repositories": [
