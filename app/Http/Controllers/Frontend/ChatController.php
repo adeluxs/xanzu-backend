@@ -24,7 +24,11 @@ class ChatController extends Controller
                 ->orWhere(function ($query) use ($authUser, $user) {
                     $query->where('sender_id', $user->id)->where('receiver_id', $authUser);
                 })
-                ->oldest()->get();
+                ->latest('id')
+                ->limit(100)
+                ->get()
+                ->sortBy('id')
+                ->values();
             $receiver = $user;
         } else {
             $currentChat = collect([]);
@@ -36,13 +40,13 @@ class ChatController extends Controller
                 ? $currentChat->first()->receiver
                 : $currentChat->first()->sender;
 
-            // seen unseen chat of current user
-            $currentChat->each(function ($chat) use ($authUser) {
-                if ($chat->receiver_id == $authUser && ! $chat->seen) {
-                    $chat->seen = true;
-                    $chat->save();
-                }
-            });
+            // Mark all unread messages in this conversation in one query instead
+            // of issuing an UPDATE for every hydrated chat row.
+            Chat::query()
+                ->where('sender_id', $receiver->id)
+                ->where('receiver_id', $authUser)
+                ->where('seen', false)
+                ->update(['seen' => true]);
         }
 
         return view('frontend::chat.index', compact('authUser', 'currentChat', 'receiver'));

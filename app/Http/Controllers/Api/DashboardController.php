@@ -2,15 +2,11 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Enums\SendMoneyStatus;
 use App\Enums\TxnStatus;
 use App\Enums\TxnType;
 use App\Http\Controllers\Controller;
-use App\Http\Resources\BeneficiaryResource;
 use App\Http\Resources\TransactionResource;
-use App\Models\Beneficiary;
 use App\Models\Notification;
-use App\Models\SendMoney;
 use App\Models\Transaction;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
@@ -26,43 +22,36 @@ class DashboardController extends Controller
     {
         $user = $request->user();
         $hour = now()->hour;
+        $greeting = $hour < 12 ? __('Good morning') : ($hour < 18 ? __('Good afternoon') : __('Good evening'));
 
-        if ($hour < 12) {
-            $greeting = __('Good morning');
-        } elseif ($hour < 18) {
-            $greeting = __('Good afternoon');
-        } else {
-            $greeting = __('Good evening');
-        }
+        $summary = Transaction::query()
+            ->where('user_id', $user->id)
+            ->selectRaw('COUNT(*) as total_transactions')
+            ->selectRaw('COALESCE(SUM(CASE WHEN type = ? AND status = ? THEN amount ELSE 0 END), 0) as total_send_money', [TxnType::Transfer->value, TxnStatus::Success->value])
+            ->first();
 
-        $latestSendMoney = Beneficiary::where('user_id', $user->id)->latest()->take(4)->get()->map(function ($beneficiary) use ($user) {
-            $latestTxn = $beneficiary->latestTransaction($user->id);
-            $latestAmount = $latestTxn ? $latestTxn->transaction->amount : null;
-
-            return [
-                'id' => $beneficiary->id,
-                'name' => $beneficiary->name,
-                'email' => $beneficiary->email,
-                'phone' => $beneficiary->phone,
-                'latest_transaction_amount' => $latestAmount,
-                'latest_transaction_date' => $latestTxn ? $latestTxn->created_at->format('Y-m-d') : null,
-                'beneficiary' => new BeneficiaryResource($beneficiary),
-            ];
-        });
+        $recentTransfers = Transaction::query()
+            ->where('user_id', $user->id)
+            ->where('type', TxnType::Transfer->value)
+            ->with('fromUser:id,first_name,last_name,username,phone')
+            ->latest('id')
+            ->limit(4)
+            ->get();
 
         return $this->successResponse([
             'balance' => $user->balance,
-            'latest_transactions' => TransactionResource::collection($user->transaction()->latest()->paginate(5)),
-            'total_send_money' => number_format(Transaction::where('user_id', $user->id)->where('type', TxnType::SendMoney)->where('status', TxnStatus::Success)->sum('amount'), 8),
-            'total_transactions' => $user->transaction()->count(),
-            'pending_send_money' => SendMoney::where('user_id', $user->id)->where('status', SendMoneyStatus::Pending)->count(),
-            'rejected_send_money' => SendMoney::where('user_id', $user->id)->where('status', SendMoneyStatus::Rejected)->count(),
-            'unseen_notifications_count' => $unreadCount = Notification::where('for', 'user')
+            'latest_transactions' => TransactionResource::collection(
+                $user->transaction()->latest('id')->paginate(5)
+            ),
+            'total_send_money' => number_format((float) ($summary->total_send_money ?? 0), 8),
+            'total_transactions' => (int) ($summary->total_transactions ?? 0),
+            'unseen_notifications_count' => Notification::query()
+                ->where('for', 'user')
                 ->where('user_id', $user->id)
                 ->where('read', 0)
                 ->count(),
             'greetings' => $greeting,
-            'recent_activity' => $latestSendMoney,
+            'recent_activity' => TransactionResource::collection($recentTransfers),
         ]);
     }
 

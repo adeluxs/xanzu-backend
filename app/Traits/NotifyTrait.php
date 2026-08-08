@@ -3,6 +3,7 @@
 namespace App\Traits;
 
 use App\Events\NotificationEvent;
+use App\Jobs\SendFcmNotificationJob;
 use App\Mail\MailSend;
 use App\Models\Notification;
 use App\Models\Template;
@@ -10,6 +11,7 @@ use App\Models\UserDevice;
 use Exception;
 use Google\Auth\Credentials\ServiceAccountCredentials;
 use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -20,7 +22,11 @@ trait NotifyTrait
 
     public function sendNotify($email, $code, $for, $shortcodes, $phone, $userId, $action = '/')
     {
-        $template = Template::where('for', $for)->where('code', $code)->first();
+        $template = Cache::remember(
+            'notify.template.' . sha1((string) $for . '|' . (string) $code),
+            now()->addMinutes(5),
+            fn () => Template::where('for', $for)->where('code', $code)->first()
+        );
 
         if (!$template) {
             return null;
@@ -79,6 +85,18 @@ trait NotifyTrait
                 }
 
                 \Log::info('Sending email notification', ['email' => $email, 'template_code' => $template->code]);
+
+                $timeSensitiveCodes = [
+                    'otp',
+                    'email_verification_otp',
+                    'forgot_password_otp',
+                    'admin_forget_password',
+                ];
+
+                if (config('queue.default') !== 'sync' && ! in_array($template->code, $timeSensitiveCodes, true)) {
+                    Mail::to($email)->queue(new MailSend($details));
+                    return null;
+                }
 
                 return Mail::to($email)->send(new MailSend($details));
             }
@@ -169,6 +187,11 @@ trait NotifyTrait
                 'action_url' => $action,
             ];
 
+            if (config('queue.default') !== 'sync') {
+                SendFcmNotificationJob::dispatch($token, $title, $body, $data)->afterCommit();
+                return;
+            }
+
             $this->sendFcmNotification($token, $title, $body, $data);
         } catch (Exception $e) {
             \Log::error('FCM Notification Error: ' . $e->getMessage());
@@ -197,7 +220,11 @@ trait NotifyTrait
                 $jsonData
             );
 
-            $bearerToken = $credentials->fetchAuthToken()['access_token'];
+            $bearerToken = Cache::remember(
+                'firebase.messaging.oauth.' . sha1($json),
+                now()->addMinutes(45),
+                fn () => (string) data_get($credentials->fetchAuthToken(), 'access_token', '')
+            );
 
             $projectData = json_decode(file_get_contents($json), true);
             $projectId = data_get($projectData, 'project_id');
@@ -219,7 +246,11 @@ trait NotifyTrait
                 ],
             ];
 
-            $response = Http::withToken($bearerToken)->post($url, $payload);
+            $response = Http::withToken($bearerToken)
+                ->connectTimeout(3)
+                ->timeout(8)
+                ->retry(1, 150, throw: false)
+                ->post($url, $payload);
 
         } catch (Exception $e) {
             \Log::error('FCM Notification Error: ' . $e->getMessage());

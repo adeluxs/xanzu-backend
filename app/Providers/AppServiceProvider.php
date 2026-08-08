@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\Performance\DatabaseAvailability;
 use App\Facades\Notification\Notify;
 use App\Facades\Txn\Txn;
 use Illuminate\Contracts\Foundation\Application;
@@ -10,6 +11,8 @@ use Illuminate\Pagination\Paginator;
 use Illuminate\Routing\Redirector;
 use Illuminate\Routing\UrlGenerator;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -43,7 +46,7 @@ class AppServiceProvider extends ServiceProvider
             return new Txn;
         });
 
-        if (App::dbConnectionCheck()) {
+        if (DatabaseAvailability::check()) {
             $timezone = setting('site_timezone', 'global');
 
             config()->set([
@@ -68,6 +71,22 @@ class AppServiceProvider extends ServiceProvider
 
         // Set string length to 255
         Schema::defaultStringLength(255);
+
+        // Optional production-safe slow-query diagnostics. Enable with
+        // PERFORMANCE_LOG_SLOW_QUERIES=true; it does not execute extra queries.
+        if ((bool) env('PERFORMANCE_LOG_SLOW_QUERIES', false)) {
+            DB::listen(function ($query): void {
+                $threshold = max(100, (int) env('PERFORMANCE_SLOW_QUERY_MS', 500));
+                if ($query->time >= $threshold) {
+                    Log::warning('Slow database query', [
+                        'time_ms' => $query->time,
+                        'sql' => $query->sql,
+                        'connection' => $query->connectionName,
+                        'path' => request()?->path(),
+                    ]);
+                }
+            });
+        }
 
 
         URL::forceScheme('https');

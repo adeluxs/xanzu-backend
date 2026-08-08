@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\ReferralUserTree;
 use App\Models\LevelReferral;
 use App\Models\Setting;
+use App\Models\Transaction;
+use App\Enums\TxnStatus;
+use App\Enums\TxnType;
 use App\Models\User;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
@@ -33,7 +36,17 @@ class ReferralController extends Controller
     public function directReferrals(Request $request)
     {
         $user = auth()->user();
-        $referralUsers = $user->referrals()->select('id', 'first_name', 'avatar', 'last_name', 'status', 'email', 'created_at')->paginate($request->integer('per_page', 15));
+        $referralUsers = $user->referrals()
+            ->select('id', 'first_name', 'avatar', 'last_name', 'status', 'email', 'created_at')
+            ->selectSub(
+                Transaction::query()
+                    ->selectRaw('COALESCE(SUM(amount), 0)')
+                    ->whereColumn('transactions.user_id', 'users.id')
+                    ->where('transactions.status', TxnStatus::Success->value)
+                    ->where('transactions.type', TxnType::Referral->value),
+                'referral_profit_total'
+            )
+            ->paginate($request->integer('per_page', 15));
 
         $users = $referralUsers->map(function ($user) {
             return [
@@ -42,7 +55,7 @@ class ReferralController extends Controller
                 'avatar' => $user->avatar_path,
                 'status' => $user->status,
                 'email' => $user->email,
-                'referral_profit' => formatCurrency($user->totalReferralProfit()),
+                'referral_profit' => formatCurrency((float) ($user->referral_profit_total ?? 0)),
                 'created_at' => $user->created_at,
             ];
         });
@@ -58,10 +71,10 @@ class ReferralController extends Controller
     public function referralTree()
     {
         $user = auth()->user();
-        $maxLevel = LevelReferral::max('the_order');
+        $maxLevel = min(8, max(1, (int) (LevelReferral::max('the_order') ?: 1))); // bound response/query growth
         $relations = [];
         $path = 'referrals';
-        for ($i = 0; $i < ($maxLevel ?: 1); $i++) {
+        for ($i = 0; $i < $maxLevel; $i++) {
             $relations[] = $path.':id,first_name,last_name,avatar,email,created_at,ref_id,status';
             $path .= '.referrals';
         }

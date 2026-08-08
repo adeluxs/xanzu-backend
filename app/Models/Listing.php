@@ -251,12 +251,25 @@ class Listing extends Model
     public function isOutOfStock(): Attribute
     {
         return Attribute::make(get: function () {
-            // If listing has attributes, check total attribute qty
-            if ($this->has_attributes && $this->listingAttributes->isNotEmpty()) {
-                return $this->listingAttributes->sum('qty') <= 0;
+            if ($this->has_attributes) {
+                $attributes = $this->relationLoaded('listingAttributes')
+                    ? $this->listingAttributes
+                    : $this->listingAttributes()->get(['qty']);
+
+                if ($attributes->isNotEmpty()) {
+                    return $attributes->sum('qty') <= 0;
+                }
             }
 
-            return $this->delivery_method == 'auto' && $this->deliveryItems()->deliveryAble()->whereNull('order_id')->count() <= 0 || $this->quantity <= 0;
+            if ($this->delivery_method === 'auto') {
+                $available = array_key_exists('available_delivery_items_count', $this->attributes)
+                    ? (int) $this->attributes['available_delivery_items_count']
+                    : $this->deliveryItems()->deliveryAble()->whereNull('order_id')->count();
+
+                return $available <= 0 || $this->quantity <= 0;
+            }
+
+            return $this->quantity <= 0;
         });
     }
 
@@ -274,6 +287,11 @@ class Listing extends Model
         return $this->hasMany(DeliveryItem::class, 'listing_id')->whereNull(['order_id'])->where('is_used', 0);
     }
 
+    public function analysis()
+    {
+        return $this->hasMany(ListingAnalysis::class, 'listing_id');
+    }
+
     public function reviews()
     {
         return $this->hasMany(ListingReview::class, 'listing_id');
@@ -289,9 +307,9 @@ class Listing extends Model
      */
     protected function averageRating(): Attribute
     {
-        return Attribute::make(get: function () {
-            return $this->approvedReviews()->avg('rating') ?: 0;
-        });
+        // avg_rating is already denormalized when reviews are moderated. Avoid
+        // a hidden aggregate query every time a Listing model is serialized.
+        return Attribute::make(get: fn () => (float) ($this->avg_rating ?? 0));
     }
 
     /**

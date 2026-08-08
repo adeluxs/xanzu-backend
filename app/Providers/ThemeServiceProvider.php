@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\Performance\DatabaseAvailability;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\ServiceProvider;
 use Remotelywork\Installer\Repository\App;
@@ -22,7 +23,7 @@ class ThemeServiceProvider extends ServiceProvider
      */
     public function boot()
     {
-        if (App::dbConnectionCheck()) {
+        if (DatabaseAvailability::check()) {
             $views = __DIR__.'/../../resources/views/frontend/'.site_theme();
             $this->loadViewsFrom($views, 'frontend');
 

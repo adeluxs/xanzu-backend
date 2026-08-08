@@ -413,16 +413,53 @@ class OrderService
 
     private function resolveItems(array $orderData): array
     {
+        $rawItems = collect($orderData['items'] ?? [])->filter(fn ($item) => is_array($item))->values();
+        if ($rawItems->isEmpty()) {
+            return [];
+        }
+
+        $listingIds = $rawItems
+            ->pluck('listing_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        $listings = Listing::query()
+            ->whereIn('id', $listingIds)
+            ->get()
+            ->keyBy('id');
+
+        if ($listings->count() !== $listingIds->count()) {
+            throw new Exception('One or more products are no longer available.');
+        }
+
+        $allSelectedAttributeIds = $rawItems
+            ->flatMap(fn ($item) => (array) ($item['selected_attributes'] ?? []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        $attributesById = $allSelectedAttributeIds->isEmpty()
+            ? collect()
+            : ListingAttribute::query()
+                ->whereIn('id', $allSelectedAttributeIds)
+                ->get()
+                ->keyBy('id');
 
         $resolved = [];
 
-        foreach ($orderData['items'] as $item) {
-            $listing = Listing::findOrFail($item['listing_id']);
-            $qty = (int) ($item['quantity'] ?? 1);
+        foreach ($rawItems as $item) {
+            $listingId = (int) ($item['listing_id'] ?? 0);
+            /** @var Listing $listing */
+            $listing = $listings->get($listingId);
+            if (! $listing) {
+                throw new Exception('Product not found.');
+            }
 
-            // Base listing final price is always included; selected attributes are additive.
+            $qty = max(1, (int) ($item['quantity'] ?? 1));
             $baseUnitPrice = $listing->final_price;
-
             $unitPrice = $baseUnitPrice;
             $selectedAttr = [];
 
@@ -431,37 +468,33 @@ class OrderService
                     ->map(fn ($id) => (int) $id)
                     ->filter(fn ($id) => $id > 0)
                     ->unique()
-                    ->values()
-                    ->all();
+                    ->values();
 
-                $attrs = ListingAttribute::whereIn('id', $selectedAttrIds)
-                    ->where('listing_id', $listing->id)
-                    ->get()
-                    ->keyBy('id');
+                $attrs = $selectedAttrIds
+                    ->map(fn ($id) => $attributesById->get($id))
+                    ->filter(fn ($attribute) => $attribute && (int) $attribute->listing_id === $listing->id)
+                    ->values();
 
-                if ($attrs->count() !== count($selectedAttrIds)) {
+                if ($attrs->count() !== $selectedAttrIds->count()) {
                     throw new Exception('One or more selected attribute(s) are invalid for "'.($listing->product_name ?? 'product').'"');
                 }
 
                 if ($attrs->isNotEmpty()) {
-                    $hasStockForAll = $attrs->every(fn ($a) => ($a->qty ?? 0) >= $qty);
-
+                    $hasStockForAll = $attrs->every(fn ($attribute) => ($attribute->qty ?? 0) >= $qty);
                     if (! $hasStockForAll) {
                         throw new Exception('Selected attribute(s) are out of stock for "'.($listing->product_name ?? 'product').'"');
                     }
 
-                    $attributePrice = (float) $attrs->sum('final_price');
-                    $unitPrice = $baseUnitPrice + $attributePrice;
-
-                    $selectedAttr = $attrs->map(fn ($a) => [
-                        'id' => $a->id,
-                        'group' => $a->group,
-                        'label' => $a->label,
-                        'price' => (float) $a->final_price,
-                        'qty' => $a->qty ?? 0,
-                        'discount_type' => $a->discount_type,
-                        'discount_amount' => $a->discount_amount,
-                        'price_before_discount' => $a->price,
+                    $unitPrice += (float) $attrs->sum('final_price');
+                    $selectedAttr = $attrs->map(fn ($attribute) => [
+                        'id' => $attribute->id,
+                        'group' => $attribute->group,
+                        'label' => $attribute->label,
+                        'price' => (float) $attribute->final_price,
+                        'qty' => $attribute->qty ?? 0,
+                        'discount_type' => $attribute->discount_type,
+                        'discount_amount' => $attribute->discount_amount,
+                        'price_before_discount' => $attribute->price,
                     ])->toArray();
                 }
             }
@@ -778,58 +811,74 @@ class OrderService
             OrderStatus::WaitingForDelivery->value,
         ];
 
-        $waitingOrderIds = Order::query()
-            ->where('status', OrderStatus::WaitingForDelivery->value)
-            ->whereHas('items', function ($query) use ($listing, $deliverableItemStatuses) {
-                $query->where('listing_id', $listing->id)
-                    ->whereIn('status', $deliverableItemStatuses);
-            })
-            ->orderBy('id')
-            ->pluck('id')
-            ->all();
+        $requiredByOrder = OrderItem::query()
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->where('orders.status', OrderStatus::WaitingForDelivery->value)
+            ->where('order_items.listing_id', $listing->id)
+            ->whereIn('order_items.status', $deliverableItemStatuses)
+            ->groupBy('order_items.order_id')
+            ->selectRaw('order_items.order_id, SUM(order_items.quantity) as required_quantity')
+            ->orderBy('order_items.order_id')
+            ->pluck('required_quantity', 'order_items.order_id');
 
-        if ($priorityOrderId) {
-            $waitingOrderIds = collect([$priorityOrderId])
-                ->merge($waitingOrderIds)
-                ->unique()
-                ->values()
-                ->all();
-        }
-
-        $deliveredCount = 0;
-
-        foreach ($waitingOrderIds as $orderId) {
-            $requiredQuantity = OrderItem::query()
-                ->where('order_id', $orderId)
+        if ($priorityOrderId && ! $requiredByOrder->has($priorityOrderId)) {
+            $priorityRequired = OrderItem::query()
+                ->where('order_id', $priorityOrderId)
                 ->where('listing_id', $listing->id)
                 ->whereIn('status', $deliverableItemStatuses)
                 ->sum('quantity');
+            if ($priorityRequired > 0) {
+                $requiredByOrder->prepend($priorityRequired, $priorityOrderId);
+            }
+        }
 
-            if ($requiredQuantity <= 0) {
+        if ($requiredByOrder->isEmpty()) {
+            return 0;
+        }
+
+        $orderIds = $requiredByOrder->keys()->map(fn ($id) => (int) $id)->values();
+        $unassignedAvailable = $listing->deliveryItems()
+            ->whereNull('order_id')
+            ->whereNotNull('data')
+            ->where('is_used', 0)
+            ->count();
+
+        $assignedAvailable = $listing->deliveryItems()
+            ->whereIn('order_id', $orderIds)
+            ->whereNotNull('data')
+            ->where('is_used', 0)
+            ->groupBy('order_id')
+            ->selectRaw('order_id, COUNT(*) as total')
+            ->pluck('total', 'order_id');
+
+        $orders = Order::query()
+            ->with(['items.listing', 'buyer'])
+            ->whereIn('id', $orderIds)
+            ->get()
+            ->keyBy('id');
+
+        $deliveredCount = 0;
+        foreach ($requiredByOrder as $orderId => $requiredQuantity) {
+            $availableQuantity = $unassignedAvailable + (int) ($assignedAvailable[$orderId] ?? 0);
+            if ($availableQuantity < (int) $requiredQuantity) {
                 continue;
             }
 
-            $availableQuantity = $listing->deliveryItems()
-                ->where(function ($query) use ($orderId) {
-                    $query->whereNull('order_id')
-                        ->orWhere('order_id', $orderId);
-                })
-                ->whereNotNull('data')
-                ->where('is_used', 0)
-                ->count();
-
-            if ($availableQuantity < $requiredQuantity) {
-                continue;
-            }
-
-            $order = Order::query()->with(['items.listing', 'buyer'])->find($orderId);
-
+            $order = $orders->get((int) $orderId);
             if (! $order) {
                 continue;
             }
 
             if ($this->orderDeliveryWithNotify($order)) {
                 $deliveredCount++;
+                // Delivery consumes previously-unassigned inventory; refresh
+                // the shared count once so subsequent orders are not evaluated
+                // against inventory that has already been allocated.
+                $unassignedAvailable = $listing->deliveryItems()
+                    ->whereNull('order_id')
+                    ->whereNotNull('data')
+                    ->where('is_used', 0)
+                    ->count();
             }
         }
 

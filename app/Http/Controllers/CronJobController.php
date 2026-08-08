@@ -222,7 +222,7 @@ class CronJobController extends Controller
 
             $lastWeek = now()->subWeek();
 
-            $lastWeekOrders = Order::whereDate('created_at', '>=', $lastWeek);
+            $lastWeekOrders = Order::where('created_at', '>=', $lastWeek);
 
             $lastWeekTrendingListings = (clone $lastWeekOrders)->groupBy('listing_id')->selectRaw('listing_id, count(*) as count')->orderBy('count', 'desc')->take(10)->pluck('listing_id', 'count');
 

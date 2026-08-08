@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\Performance\DatabaseAvailability;
 use Artisan;
 use Closure;
 use Illuminate\Contracts\Foundation\Application;
@@ -28,7 +29,7 @@ class IsMaintenance
      */
     public function handle(Request $request, Closure $next)
     {
-        if (! App::dbConnectionCheck()) {
+        if (! DatabaseAvailability::check()) {
             return $next($request);
         }
         if ($this->app->isDownForMaintenance()) {

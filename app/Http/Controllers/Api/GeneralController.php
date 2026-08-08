@@ -14,11 +14,13 @@ use App\Models\Language;
 use App\Models\Notification;
 use App\Models\Page;
 use App\Models\PageSetting;
+use App\Models\Plugin;
 use App\Models\Setting;
 use App\Models\UserDevice;
 use App\Models\WithdrawMethod;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
 
 class GeneralController extends Controller
@@ -28,11 +30,22 @@ class GeneralController extends Controller
     public function getCountries()
     {
         $location = getLocation();
+        $selectedDialCode = (string) ($location->dial_code ?? '');
 
-        $allCountry = Country::active()->get(['id', 'name', 'dial_code', 'code']);
-
-        $allCountry->map(function ($country) use ($location) {
-            $country->selected = $country->dial_code == $location->dial_code;
+        $allCountry = Cache::remember('api.countries.active.v2', now()->addMinutes(30), function () {
+            return Country::active()
+                ->orderBy('name')
+                ->get(['id', 'name', 'dial_code', 'code'])
+                ->map(fn ($country) => [
+                    'id' => $country->id,
+                    'name' => $country->name,
+                    'dial_code' => $country->dial_code,
+                    'code' => $country->code,
+                ])
+                ->values();
+        })->map(function (array $country) use ($selectedDialCode) {
+            $country['selected'] = $selectedDialCode !== ''
+                && (string) $country['dial_code'] === $selectedDialCode;
 
             return $country;
         });
@@ -111,11 +124,17 @@ class GeneralController extends Controller
                 ];
             });
 
-        $legal_pages = Page::whereIn('url', ['privacy-policy', 'terms-and-conditions'])->orWhereIn('url', ['privacy', 'terms'])->get()->map(function ($page) {
-            return [
-                'name' => $page->url,
-                'value' => url($page->url),
-            ];
+        $legal_pages = Cache::remember('api.settings.legal-pages', now()->addMinutes(30), function () {
+            return Page::query()
+                ->where(function ($query) {
+                    $query->whereIn('url', ['privacy-policy', 'terms-and-conditions'])
+                        ->orWhereIn('url', ['privacy', 'terms']);
+                })
+                ->get(['url'])
+                ->map(fn ($page) => [
+                    'name' => $page->url,
+                    'value' => url($page->url),
+                ]);
         });
 
         $settings = $settings->merge($legal_pages);
@@ -141,9 +160,24 @@ class GeneralController extends Controller
         if (!setting('language_switcher')) {
             return $this->errorResponse('Language switcher is disabled');
         }
-        $languages = Language::where('status', 1)->get();
+        $languages = Cache::remember('api.languages.active', now()->addMinutes(30), function () {
+            return Language::where('status', 1)->orderByDesc('is_default')->orderBy('name')->get();
+        });
 
         return $this->successResponse(LanguageResource::collection($languages));
+    }
+
+    public function getPlugins()
+    {
+        $plugins = Cache::remember('api.plugins.active', now()->addMinutes(5), static function () {
+            return Plugin::query()
+                ->where('status', true)
+                ->orderBy('type')
+                ->orderBy('name')
+                ->get(['id', 'name', 'type', 'status']);
+        });
+
+        return $this->successResponse($plugins);
     }
 
     public function getTransactionTypes()
@@ -160,9 +194,12 @@ class GeneralController extends Controller
 
     public function getWithdrawMethods(Request $request)
     {
-        $methods = WithdrawMethod::where('status', 1)->when($request->currency, function ($query, $currency) {
-            return $query->where('currency', $currency);
-        })->get()->map(function ($method) {
+        $currency = strtoupper(trim((string) $request->input('currency', '')));
+        $methods = Cache::remember('api.withdraw-methods.' . ($currency ?: 'all'), now()->addMinutes(5), function () use ($currency) {
+            return WithdrawMethod::where('status', 1)
+                ->when($currency !== '', fn ($query) => $query->where('currency', $currency))
+                ->get();
+        })->map(function ($method) {
             $method->fields = dynamicFieldKeyFormat($method->fields ? json_decode($method->fields, true) : []);
 
             $method->icon = asset($method->icon);
@@ -249,33 +286,39 @@ class GeneralController extends Controller
             return [];
         }
 
-        $translations = json_decode(file_get_contents($filePath), true);
-
-        return $translations;
+        return Cache::remember(
+            'api.translations.'.md5($locale.'|'.(string) @filemtime($filePath)),
+            now()->addHour(),
+            static fn() => json_decode(file_get_contents($filePath), true) ?: []
+        );
     }
 
     public function getRegisterFields($type = 'user')
     {
-        $registerFields = PageSetting::select(['key', 'value'])->whereNotLike('key', 'app_%')->when($type === 'merchant', function ($query) {
-            return $query->whereLike('key', 'merchant_%');
-        }, function ($query) {
-            return $query->whereNotLike('key', 'merchant_%');
-        })->get();
-
-        $registerFields = $registerFields->map(function ($field) {
-
+        $registerFields = Cache::remember(
+            'api.register-fields.base.'.($type === 'merchant' ? 'merchant' : 'user'),
+            now()->addMinutes(10),
+            function () use ($type) {
+                return PageSetting::select(['key', 'value'])
+                    ->whereNotLike('key', 'app_%')
+                    ->when($type === 'merchant', function ($query) {
+                        return $query->whereLike('key', 'merchant_%');
+                    }, function ($query) {
+                        return $query->whereNotLike('key', 'merchant_%');
+                    })
+                    ->get();
+            }
+        )->map(function ($field) {
             if (str_starts_with($field->key, 'app_')) {
                 $field->value = file_exists(base_path('assets/' . $field->value)) ? asset($field->value) : $field->value;
             }
-
             return $field;
         });
 
         if ($type === 'merchant') {
 
             // merchant kyc fields
-            $merchantKyc = Kyc::where('user_type', 'merchant')->first();
-            $merchantKycFields = $merchantKyc?->fields;
+            $merchantKycFields = Cache::remember('api.register-fields.merchant-kyc-template', now()->addMinutes(10), static fn() => Kyc::where('user_type', 'merchant')->value('fields'));
 
             $merchantKycData = $merchantKycFields ? dynamicFieldKeyFormat(json_decode($merchantKycFields, true)) : [];
 
@@ -313,26 +356,27 @@ class GeneralController extends Controller
 
     public function getAppSplashOnboardingScreen()
     {
-        $splashScreens = PageSetting::whereLike('key', 'app_%')->get()->map(function ($setting) {
-            return [
-                'key' => $setting->key,
-                'value' => file_exists(base_path('assets/' . $setting->value)) ? asset($setting->value) : $setting->value,
-            ];
+        $splashScreens = Cache::remember('api.app-splash-onboarding.v1', now()->addMinutes(10), function () {
+            return PageSetting::whereLike('key', 'app_%')->get()->map(function ($setting) {
+                return [
+                    'key' => $setting->key,
+                    'value' => file_exists(base_path('assets/' . $setting->value)) ? asset($setting->value) : $setting->value,
+                ];
+            })->transform(function ($item) {
+                $parts = explode('_', $item['key']);
+                $screenKey = $parts[2] ?? 'default';
+                $fieldKey = $parts[3] ?? 'value';
+
+                return [
+                    'screen' => $screenKey,
+                    $fieldKey => $item['value'],
+                ];
+            })->groupBy('screen')->map(function ($group) {
+                return $group->reduce(function ($carry, $item) {
+                    return array_merge($carry, $item);
+                }, []);
+            })->values();
         });
-
-        $splashScreens = $splashScreens->transform(function ($item) {
-            $screenKey = explode('_', $item['key'])[2];
-            $fieldKey = explode('_', $item['key'])[3];
-
-            return [
-                'screen' => $screenKey,
-                $fieldKey => $item['value'],
-            ];
-        })->groupBy('screen')->map(function ($group) {
-            return $group->reduce(function ($carry, $item) {
-                return array_merge($carry, $item);
-            }, []);
-        })->values();
 
         return response()->json([
             'status' => true,

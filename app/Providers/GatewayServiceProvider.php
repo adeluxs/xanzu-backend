@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\Performance\DatabaseAvailability;
 use Illuminate\Support\ServiceProvider;
 use Mollie\Laravel\Facades\Mollie;
 use Remotelywork\Installer\Repository\App;
@@ -27,7 +28,7 @@ class GatewayServiceProvider extends ServiceProvider
     public function boot()
     {
 
-        if (App::dbConnectionCheck() && Schema::hasTable('gateways')) {
+        if (DatabaseAvailability::check() && Schema::hasTable('gateways')) {
             // =============== paypal ==============
             $paypalCredential = gateway_info('paypal');
             $paystackCredential = gateway_info('paystack');

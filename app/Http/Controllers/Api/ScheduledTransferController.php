@@ -65,9 +65,18 @@ class ScheduledTransferController extends Controller
             'channel:id,name',
             'fundSource:id,name',
             'transferPurpose:id,name',
-        ])->latest()->get();
+        ])->latest()->paginate($request->integer('per_page', 20));
 
-        return $this->successResponse(ScheduleTransferResource::collection($scheduledTransfers), __('Scheduled transfers retrieved successfully.'));
+        return $this->successResponse(
+            data: ScheduleTransferResource::collection($scheduledTransfers),
+            message: __('Scheduled transfers retrieved successfully.'),
+            meta: [
+                'total' => $scheduledTransfers->total(),
+                'per_page' => $scheduledTransfers->perPage(),
+                'current_page' => $scheduledTransfers->currentPage(),
+                'last_page' => $scheduledTransfers->lastPage(),
+            ],
+        );
     }
 
     public function toggleStatus(Request $request, $id)

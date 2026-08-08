@@ -8,6 +8,7 @@ use App\Enums\TxnStatus;
 use App\Enums\TxnType;
 use App\Facades\Txn\Txn;
 use App\Http\Controllers\Controller;
+use App\Jobs\SendBulkNotificationJob;
 use App\Models\Kyc;
 use App\Models\LevelReferral;
 use App\Models\Listing;
@@ -659,16 +660,13 @@ class UserController extends Controller
                 $this->sendNotify($user->email, 'user_mail', 'User', $shortcodes, $user->phone, $user->id);
 
             } else {
-                $users = User::where('status', 1)
-                    ->when($request->user_type != 'all', function ($query) use ($request) {
-                        $query->where('user_type', $request->user_type);
-                    })->get();
-
-                foreach ($users as $user) {
-                    $shortcodes = array_merge($shortcodes, ['[[full_name]]' => $user->full_name]);
-
-                    $this->sendNotify($user->email, 'user_mail', 'User', $shortcodes, $user->phone, $user->id);
-                }
+                SendBulkNotificationJob::dispatch(
+                    audience: 'users',
+                    templateCode: 'user_mail',
+                    templateFor: 'User',
+                    shortcodes: $shortcodes,
+                    userType: $request->user_type,
+                );
 
             }
             $status = 'Success';

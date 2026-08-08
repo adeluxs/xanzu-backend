@@ -29,10 +29,10 @@ trait SmsTrait
                 'api_secret' => $gatewayCredentials['api_secret'],
                 'from' => $gatewayCredentials['nexmo_from'],
                 'to' => $phone,
-                'text' => $message['message_body'],
+                'text' => $message['sms_body'] ?? $message['message_body'] ?? '',
             ];
 
-            $response = Http::post('https://rest.nexmo.com/sms/json', $params);
+            $response = Http::connectTimeout(3)->timeout(8)->retry(1, 150, throw: false)->post('https://rest.nexmo.com/sms/json', $params);
             $json = $response->json();
 
         } catch (Exception $e) {
@@ -55,7 +55,7 @@ trait SmsTrait
             $phone,
             [
                 'from' => $twilioPhoneNumber,
-                'body' => $message['message_body'],
+                'body' => $message['sms_body'] ?? $message['message_body'] ?? '',
             ]
         );
 

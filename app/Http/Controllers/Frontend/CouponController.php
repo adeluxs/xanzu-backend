@@ -14,8 +14,11 @@ class CouponController extends Controller
         $coupons = Coupon::whereBelongsTo(auth()->user(), 'seller')
             ->when($request->filter, function ($query) use ($request) {
                 match ($request->filter) {
-                    'active' => $query->whereDate('expires_at', '>=', now()),
-                    'inactive' => $query->whereDate('expires_at', '<', now())->orWhere('status', 0),
+                    'active' => $query->where('expires_at', '>=', now()->toDateString()),
+                    'inactive' => $query->where(function ($inactive) {
+                        $inactive->where('expires_at', '<', now()->toDateString())
+                            ->orWhere('status', 0);
+                    }),
                     default => $query,
                 };
             })

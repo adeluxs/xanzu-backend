@@ -27,44 +27,57 @@ class DashboardController extends Controller
         $greeting = $this->greetingText();
         $name = trim((string) ($user->first_name ?: $user->username ?: 'Merchant'));
 
-        $validOrderItemsQuery = OrderItem::query()
+        $startCurrentWeek = now()->copy()->startOfWeek();
+        $endCurrentWeek = now()->copy()->endOfWeek();
+        $startLastWeek = now()->copy()->subWeek()->startOfWeek();
+        $endLastWeek = now()->copy()->subWeek()->endOfWeek();
+
+        $sales = OrderItem::query()
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->where('order_items.seller_id', $user->id)
+            ->whereNotIn('orders.status', [
+                OrderStatus::Cancelled->value,
+                OrderStatus::Failed->value,
+                OrderStatus::Refunded->value,
+            ])
+            ->selectRaw('COALESCE(SUM(order_items.total_price), 0) as total_sales')
+            ->selectRaw('COALESCE(SUM(CASE WHEN orders.is_bnpl = 1 THEN order_items.total_price ELSE 0 END), 0) as total_sales_bnpl')
+            ->selectRaw('COUNT(DISTINCT order_items.order_id) as total_orders')
+            ->selectRaw('COALESCE(SUM(CASE WHEN order_items.created_at BETWEEN ? AND ? THEN order_items.total_price ELSE 0 END), 0) as sales_current_week', [$startCurrentWeek, $endCurrentWeek])
+            ->selectRaw('COALESCE(SUM(CASE WHEN order_items.created_at BETWEEN ? AND ? THEN order_items.total_price ELSE 0 END), 0) as sales_last_week', [$startLastWeek, $endLastWeek])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN order_items.created_at BETWEEN ? AND ? THEN order_items.order_id END) as orders_current_week', [$startCurrentWeek, $endCurrentWeek])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN order_items.created_at BETWEEN ? AND ? THEN order_items.order_id END) as orders_last_week', [$startLastWeek, $endLastWeek])
+            ->first();
+
+        $products = Listing::query()
             ->where('seller_id', $user->id)
-            ->whereHas('order', function ($query) {
-                $query->whereNotIn('status', [
-                    OrderStatus::Cancelled->value,
-                    OrderStatus::Failed->value,
-                    OrderStatus::Refunded->value,
-                ]);
-            });
+            ->selectRaw('COUNT(*) as total_products')
+            ->selectRaw('SUM(CASE WHEN created_at BETWEEN ? AND ? THEN 1 ELSE 0 END) as products_current_week', [$startCurrentWeek, $endCurrentWeek])
+            ->selectRaw('SUM(CASE WHEN created_at BETWEEN ? AND ? THEN 1 ELSE 0 END) as products_last_week', [$startLastWeek, $endLastWeek])
+            ->first();
 
-        $totalSales = (float) (clone $validOrderItemsQuery)->sum('total_price');
-        $totalSalesBnpl = (float) (clone $validOrderItemsQuery)
-            ->whereHas('order', fn($query) => $query->where('is_bnpl', 1))
-            ->sum('total_price');
-
-        $totalOrders = (int) (clone $validOrderItemsQuery)->distinct('order_id')->count('order_id');
-        $totalProducts = (int) Listing::where('seller_id', $user->id)->count();
-
-        [$salesCurrentWeek, $salesLastWeek] = $this->weeklySums((clone $validOrderItemsQuery), 'total_price');
-        [$ordersCurrentWeek, $ordersLastWeek] = $this->weeklyDistinctCounts((clone $validOrderItemsQuery), 'order_id');
-
-        $withdrawQuery = Transaction::query()
+        $withdrawals = Transaction::query()
             ->where('user_id', $user->id)
             ->whereIn('type', [TxnType::Withdraw->value, TxnType::WithdrawAuto->value])
-            ->where('status', TxnStatus::Success->value);
+            ->where('status', TxnStatus::Success->value)
+            ->selectRaw('COALESCE(SUM(amount), 0) as total_withdraw')
+            ->selectRaw('COALESCE(SUM(CASE WHEN created_at BETWEEN ? AND ? THEN amount ELSE 0 END), 0) as withdraw_current_week', [$startCurrentWeek, $endCurrentWeek])
+            ->selectRaw('COALESCE(SUM(CASE WHEN created_at BETWEEN ? AND ? THEN amount ELSE 0 END), 0) as withdraw_last_week', [$startLastWeek, $endLastWeek])
+            ->first();
 
-        $totalWithdraw = (float) (clone $withdrawQuery)->sum('amount');
-        [$withdrawCurrentWeek, $withdrawLastWeek] = $this->weeklySums((clone $withdrawQuery), 'amount');
-
-        $productsCurrentWeek = (int) Listing::where('seller_id', $user->id)
-            ->whereBetween('created_at', [now()->copy()->startOfWeek(), now()->copy()->endOfWeek()])
-            ->count();
-        $productsLastWeek = (int) Listing::where('seller_id', $user->id)
-            ->whereBetween('created_at', [
-                now()->copy()->subWeek()->startOfWeek(),
-                now()->copy()->subWeek()->endOfWeek(),
-            ])
-            ->count();
+        $totalSales = (float) ($sales->total_sales ?? 0);
+        $totalSalesBnpl = (float) ($sales->total_sales_bnpl ?? 0);
+        $totalOrders = (int) ($sales->total_orders ?? 0);
+        $salesCurrentWeek = (float) ($sales->sales_current_week ?? 0);
+        $salesLastWeek = (float) ($sales->sales_last_week ?? 0);
+        $ordersCurrentWeek = (int) ($sales->orders_current_week ?? 0);
+        $ordersLastWeek = (int) ($sales->orders_last_week ?? 0);
+        $totalProducts = (int) ($products->total_products ?? 0);
+        $productsCurrentWeek = (int) ($products->products_current_week ?? 0);
+        $productsLastWeek = (int) ($products->products_last_week ?? 0);
+        $totalWithdraw = (float) ($withdrawals->total_withdraw ?? 0);
+        $withdrawCurrentWeek = (float) ($withdrawals->withdraw_current_week ?? 0);
+        $withdrawLastWeek = (float) ($withdrawals->withdraw_last_week ?? 0);
 
         $bnplSalesPercent = $totalSales > 0 ? round(($totalSalesBnpl / $totalSales) * 100, 2) : 0;
 
@@ -197,7 +210,7 @@ class DashboardController extends Controller
     {
         $salesByMonth = OrderItem::query()
             ->where('seller_id', $merchantId)
-            ->whereYear('created_at', now()->year)
+            ->whereBetween('created_at', [now()->copy()->startOfYear(), now()->copy()->endOfYear()])
             ->whereHas('order', function ($query) {
                 $query->whereNotIn('status', [
                     OrderStatus::Cancelled->value,

@@ -86,7 +86,7 @@ class WithdrawService
                 ->where('user_id', $authUser->id)
                 ->whereIn('type', [TxnType::Withdraw->value, TxnType::WithdrawAuto->value])
                 ->whereNotIn('status', [TxnStatus::Failed->value, TxnStatus::Cancelled->value])
-                ->whereDate('created_at', Carbon::today())
+                ->whereBetween('created_at', [Carbon::today()->startOfDay(), Carbon::today()->endOfDay()])
                 ->count();
 
             if ($todayCount >= $dailyLimit) {

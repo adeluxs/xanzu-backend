@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Performance\DatabaseAvailability;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -11,6 +12,8 @@ use Remotelywork\Installer\Repository\App;
 class Setting extends Model
 {
     use HasFactory;
+
+    private static ?Collection $requestSettingsByName = null;
 
     /**
      * The attributes that aren't mass assignable.
@@ -41,8 +44,8 @@ class Setting extends Model
      */
     public static function has($key)
     {
-        if (!App::dbConnectionCheck()) {
-            return [];
+        if (!DatabaseAvailability::check()) {
+            return false;
         }
 
         return (bool) self::getAllSettings()->whereStrict('name', $key)->count();
@@ -55,7 +58,7 @@ class Setting extends Model
      */
     public static function getAllSettings()
     {
-        if (!App::dbConnectionCheck()) {
+        if (!DatabaseAvailability::check()) {
             return [];
         }
 
@@ -68,6 +71,12 @@ class Setting extends Model
         return Cache::rememberForever('settings.all', function () {
             return self::all();
         });
+    }
+
+
+    private static function settingsByName(): Collection
+    {
+        return self::$requestSettingsByName ??= self::getAllSettings()->keyBy('name');
     }
 
     /**
@@ -148,9 +157,15 @@ class Setting extends Model
      */
     public static function get($key, $section = null, $default = null)
     {
-        if (self::has($key)) {
-            $setting = self::getAllSettings()->where('name', $key)->first();
+        if (! DatabaseAvailability::check()) {
+            return self::getDefaultValue($key, $section, $default);
+        }
 
+        // A setting() call is used throughout views, middleware and APIs. Do a
+        // single cached collection lookup instead of has() + getAllSettings(),
+        // which previously repeated both the DB availability check and scan.
+        $setting = self::settingsByName()->get($key);
+        if ($setting) {
             return self::castValue($setting->val, $setting->type);
         }
 
@@ -225,6 +240,7 @@ class Setting extends Model
      */
     public static function flushCache()
     {
+        self::$requestSettingsByName = null;
         Cache::forget('settings.all');
     }
 }

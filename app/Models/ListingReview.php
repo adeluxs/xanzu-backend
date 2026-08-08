@@ -120,5 +120,6 @@ class ListingReview extends Model
         }
 
         Cache::forget('listing_review_summary:' . $listingId);
+        Cache::forget('listing_review_summary:' . $listingId . ':queued');
     }
 }

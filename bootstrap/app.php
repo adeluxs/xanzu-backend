@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\CheckDeactivate;
+use App\Http\Middleware\ClampApiPagination;
 use App\Http\Middleware\CheckFeatureAccess;
 use App\Http\Middleware\DemoMode;
 use App\Http\Middleware\Localization;
@@ -25,6 +26,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Keep every API list endpoint bounded, even when a client sends an
+        // excessive per_page value. This protects DB, serializer and mobile memory.
+        $middleware->appendToGroup('api', ClampApiPagination::class);
+
         $middleware->alias([
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,

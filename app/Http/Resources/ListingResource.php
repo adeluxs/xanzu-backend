@@ -22,20 +22,22 @@ class ListingResource extends JsonResource
         }
 
         $reviewCountsByRating = [];
+        $totalApprovedReviews = 0;
         if ($this->fullData) {
-            $approvedReviews = $this->relationLoaded('approvedReviews')
-                ? $this->approvedReviews
-                : $this->approvedReviews()->get(['id', 'rating']);
-
-            $groupedCounts = $approvedReviews->groupBy('rating')->map->count();
+            // Only return five aggregate rows instead of hydrating every review.
+            $groupedCounts = $this->approvedReviews()
+                ->selectRaw('rating, COUNT(*) as total')
+                ->groupBy('rating')
+                ->pluck('total', 'rating');
 
             $reviewCountsByRating = [
-                '1' => (int) ($groupedCounts->get(1, 0)),
-                '2' => (int) ($groupedCounts->get(2, 0)),
-                '3' => (int) ($groupedCounts->get(3, 0)),
-                '4' => (int) ($groupedCounts->get(4, 0)),
-                '5' => (int) ($groupedCounts->get(5, 0)),
+                '1' => (int) ($groupedCounts[1] ?? 0),
+                '2' => (int) ($groupedCounts[2] ?? 0),
+                '3' => (int) ($groupedCounts[3] ?? 0),
+                '4' => (int) ($groupedCounts[4] ?? 0),
+                '5' => (int) ($groupedCounts[5] ?? 0),
             ];
+            $totalApprovedReviews = array_sum($reviewCountsByRating);
         }
 
         $hasAttributes = $this->has_attributes && $this->listingAttributes->isNotEmpty();
@@ -82,15 +84,17 @@ class ListingResource extends JsonResource
             ])),
             'reviews' => $this->when($this->fullData, fn() => [
                 'average' => $this->avg_rating,
-                'total' => (int) $this->total_reviews,
+                'total' => $totalApprovedReviews,
                 'count_by_rating' => $reviewCountsByRating,
                 'list' => $this->whenLoaded('reviews', fn() => ListingReviewResource::collection($this->reviews)),
             ]),
-            'shipping_info' => [
-                'charge' => strval($this->shippingConfig()['shipping_charge']),
-                'charge_type' => $this->shippingConfig()['shipping_charge_type'],
-
-            ],
+            'shipping_info' => (function (): array {
+                $shipping = $this->shippingConfig();
+                return [
+                    'charge' => strval($shipping['shipping_charge']),
+                    'charge_type' => $shipping['shipping_charge_type'],
+                ];
+            })(),
         ];
     }
 

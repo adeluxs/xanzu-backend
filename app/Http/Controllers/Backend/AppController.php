@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Backend;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SendBulkNotificationJob;
 use App\Models\Subscription;
 use App\Rules\MatchOldPassword;
 use App\Traits\ImageUpload;
@@ -65,12 +66,14 @@ class AppController extends Controller
                 '[[site_url]]' => route('home'),
             ];
 
-            $subscribers = Subscription::all();
-            foreach ($subscribers as $subscriber) {
-                $this->sendNotify($subscriber->email, 'subscriber_mail', 'User', $shortcodes, null, null);
-            }
+            SendBulkNotificationJob::dispatch(
+                audience: 'subscribers',
+                templateCode: 'subscriber_mail',
+                templateFor: 'User',
+                shortcodes: $shortcodes,
+            );
             $status = 'success';
-            $message = __('Mail Send Successfully');
+            $message = __('Subscriber mail has been queued successfully');
         } catch (Exception $e) {
             $status = 'warning';
             $message = __('something is wrong');

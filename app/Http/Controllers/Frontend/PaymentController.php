@@ -53,8 +53,10 @@ class PaymentController extends Controller
             ->whereIn('type', [TxnType::Withdraw, TxnType::WithdrawAuto])
             ->search(request('trx'))
             ->when(request('daterange'), function ($query) use ($from_date, $to_date) {
-                $query->whereDate('created_at', '>=', Date::parse($from_date)->format('Y-m-d'));
-                $query->whereDate('created_at', '<=', Date::parse($to_date)->format('Y-m-d'));
+                $query->whereBetween('created_at', [
+                    Date::parse($from_date)->startOfDay(),
+                    Date::parse($to_date)->endOfDay(),
+                ]);
             })
             ->latest()
             ->paginate(request()->integer('limit', 15))
@@ -294,7 +296,7 @@ class PaymentController extends Controller
         }
 
         // daily limit
-        $todayTransaction = Transaction::where('user_id', auth()->id())->whereIn('type', [TxnType::Withdraw, TxnType::WithdrawAuto])->whereNotIn('status', [TxnStatus::Failed->value, TxnStatus::Cancelled->value])->whereDate('created_at', Date::today())->count();
+        $todayTransaction = Transaction::where('user_id', auth()->id())->whereIn('type', [TxnType::Withdraw, TxnType::WithdrawAuto])->whereNotIn('status', [TxnStatus::Failed->value, TxnStatus::Cancelled->value])->whereBetween('created_at', [Date::today()->startOfDay(), Date::today()->endOfDay()])->count();
         $dayLimit = (float) Setting('withdraw_day_limit', 'fee');
         if ($dayLimit > 0 && $todayTransaction >= $dayLimit) {
             notify()->error(__('Today Withdraw limit has been reached'), 'Error');
@@ -433,8 +435,10 @@ class PaymentController extends Controller
             ->whereIn('type', [TxnType::Withdraw, TxnType::WithdrawAuto])
             ->search(request('trx'))
             ->when(request('daterange'), function ($query) use ($from_date, $to_date) {
-                $query->whereDate('created_at', '>=', Date::parse($from_date)->format('Y-m-d'));
-                $query->whereDate('created_at', '<=', Date::parse($to_date)->format('Y-m-d'));
+                $query->whereBetween('created_at', [
+                    Date::parse($from_date)->startOfDay(),
+                    Date::parse($to_date)->endOfDay(),
+                ]);
             })
             ->orderBy('created_at', 'desc')
             ->paginate(request('limit', 15))

@@ -27,6 +27,14 @@ class DashboardController extends Controller
 
     public function dashboard(Request $request)
     {
+        // Chart refreshes should not execute the full dashboard workload.
+        if ($request->ajax() && $request->type === 'chart') {
+            return response()->json($this->getChartData($request));
+        }
+        if ($request->ajax() && $request->type === 'pie') {
+            return response()->json($this->getPieData($request));
+        }
+
         $recentSell = Order::whereBelongsTo(auth()->user(), 'seller')
             ->latest()
             ->take(5)
@@ -37,11 +45,11 @@ class DashboardController extends Controller
             ->take(5)
             ->get();
 
-        $totalViews = Listing::whereBelongsTo(auth()->user(), 'seller')->withCount([
-            'analysis' => function ($query) {
-                $query->view();
-            },
-        ])->pluck('analysis_count')->sum();
+        $totalViews = DB::table('listing_analysis')
+            ->join('listings', 'listing_analysis.listing_id', '=', 'listings.id')
+            ->where('listings.seller_id', auth()->id())
+            ->where('listing_analysis.event_type', 'view')
+            ->count();
 
         $totalRevenue = Order::whereBelongsTo(auth()->user(), auth()->user()->is_seller ? 'seller' : 'buyer')
             ->where('is_topup', false)
@@ -61,13 +69,6 @@ class DashboardController extends Controller
 
         $chartData = $this->getChartData($request);
         $pieData = $this->getPieData($request);
-        if ($request->ajax()) {
-            if ($request->type == 'chart') {
-                return response()->json($chartData);
-            } elseif ($request->type == 'pie') {
-                return response()->json($pieData);
-            }
-        }
         $sellerData = null;
         if (auth()->user()->is_seller) {
             $sellerData = $this->getSellerData($request);
@@ -107,14 +108,20 @@ class DashboardController extends Controller
         foreach (OrderStatus::cases() as $key => $value) {
             $orderData[str($value->value)->headline()->toString()] = $orders->where('status', $value->value)->sum('total_sells');
         }
-        $planData = $this->getPlanData();
+        $listingStats = $user->listings()
+            ->selectRaw('COUNT(*) as total_listings, SUM(CASE WHEN is_flash = 1 THEN 1 ELSE 0 END) as flash_listings')
+            ->first();
+        $planData = $this->getPlanData(
+            totalListings: (int) ($listingStats?->total_listings ?? 0),
+            flashListings: (int) ($listingStats?->flash_listings ?? 0),
+        );
 
         return [
             'total_sold' => $totalSold,
             'orderData' => $orderData, // 6 status
             'balance' => $user->balance,
             'planData' => $planData,
-            'total_listings' => $user->listings()->count(),
+            'total_listings' => (int) ($listingStats?->total_listings ?? 0),
 
         ];
     }
@@ -153,12 +160,14 @@ class DashboardController extends Controller
         }
         $txnInArr[] = TxnType::Withdraw->value;
 
-        $transactions = Transaction::whereBelongsTo($user)
+        $transactions = Transaction::query()
+            ->whereBelongsTo($user)
             ->whereIn('type', $txnInArr)
             ->whereBetween('created_at', [$startDate, $endDate])
             ->where('status', TxnStatus::Success->value)
-            ->get()
-            ->groupBy('type');
+            ->selectRaw('type, DAY(created_at) as day_no, SUM(amount) as amount')
+            ->groupBy('type', 'day_no')
+            ->get();
 
         $seriesData = [
             TxnType::ProductSold->value => array_fill(0, $dates->count(), 0),
@@ -166,15 +175,11 @@ class DashboardController extends Controller
             TxnType::ProductOrder->value => array_fill(0, $dates->count(), 0),
             TxnType::Deposit->value => array_fill(0, $dates->count(), 0),
         ];
-        foreach ($transactions as $type => $txns) {
-            foreach ($txns as $txn) {
-                $dayIndex = $dates->search(now()->parse($txn->created_at)->format('j M'));
-                if ($dayIndex !== false) {
-                    if (! isset($seriesData[$type][$dayIndex])) {
-                        $seriesData[$type][$dayIndex] = 0;
-                    }
-                    $seriesData[$type][$dayIndex] += (float) $txn->amount;
-                }
+        foreach ($transactions as $txn) {
+            $type = $txn->type instanceof TxnType ? $txn->type->value : (string) $txn->type;
+            $dayIndex = max(0, (int) $txn->day_no - 1);
+            if (isset($seriesData[$type][$dayIndex])) {
+                $seriesData[$type][$dayIndex] = (float) $txn->amount;
             }
         }
 
@@ -194,7 +199,7 @@ class DashboardController extends Controller
         ];
     }
 
-    protected function getPlanData()
+    protected function getPlanData(?int $totalListings = null, ?int $flashListings = null)
     {
 
         $user = Auth::user();
@@ -230,11 +235,16 @@ class DashboardController extends Controller
                 $remainingDays = max(0, now()->diffInDays(now()->parse($userCurrentPlan->validity_at), true));
             }
 
-            $flashSaleUsed = $user->listings()->where('is_flash', true)->count();
-            $flashSaleRemaining = max(0, ($userCurrentPlan->flash_sale_limit ?? 0) - $flashSaleUsed);
+            if ($totalListings === null || $flashListings === null) {
+                $listingStats = $user->listings()
+                    ->selectRaw('COUNT(*) as total_listings, SUM(CASE WHEN is_flash = 1 THEN 1 ELSE 0 END) as flash_listings')
+                    ->first();
+                $totalListings ??= (int) ($listingStats?->total_listings ?? 0);
+                $flashListings ??= (int) ($listingStats?->flash_listings ?? 0);
+            }
 
-            $listingsUsed = $user->listings()->count();
-            $listingRemaining = max(0, ($userCurrentPlan->listing_limit ?? 0) - $listingsUsed);
+            $flashSaleRemaining = max(0, ($userCurrentPlan->flash_sale_limit ?? 0) - $flashListings);
+            $listingRemaining = max(0, ($userCurrentPlan->listing_limit ?? 0) - $totalListings);
 
             $chargeType = $userCurrentPlan->charge_type ?? 'fixed';
             $chargeValue = $userCurrentPlan->charge_value ?? 0;

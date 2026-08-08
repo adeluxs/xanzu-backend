@@ -11,6 +11,7 @@ use App\Http\Resources\CouponResource;
 use App\Http\Resources\ListingResource;
 use App\Http\Resources\ListingReviewResource;
 use App\Http\Resources\ProviderResource;
+use App\Jobs\GenerateListingReviewSummary;
 use App\Models\Banner;
 use App\Models\Brand;
 use App\Models\Category;
@@ -24,7 +25,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
 use Modules\Ai\ListingSearch\BaseClass as AiListingSearch;
-use Modules\Ai\ReviewSummery\BaseClass as AiReviewSummery;
 
 class HomeScreenController extends Controller
 {
@@ -168,31 +168,75 @@ class HomeScreenController extends Controller
 
     public function getCachedReviewSummary(int $listingId): ?string
     {
-        return Cache::rememberForever($this->reviewSummaryCacheKey($listingId), function () use ($listingId) {
-            $reviews = ListingReviewModel::query()
-                ->where('listing_id', $listingId)
-                ->whereNull('parent_id')
-                ->where('status', ListingReview::Approved)
-                ->whereNotNull('review')
-                ->pluck('review')
-                ->map(static fn($review) => trim((string) $review))
-                ->filter(static fn($review) => $review !== '')
-                ->take(120)
-                ->values()
-                ->all();
+        $cacheKey = $this->reviewSummaryCacheKey($listingId);
+        $cached = Cache::get($cacheKey);
 
-            if (empty($reviews)) {
-                return null;
+        if ($cached !== null) {
+            return $cached === '' ? null : (string) $cached;
+        }
+
+        // AI is intentionally kept off the product-details request path. A
+        // database/Redis queue worker can refresh the summary independently.
+        // If the application is configured with the synchronous queue driver,
+        // skip generation here rather than making the mobile page wait on an
+        // external model provider.
+        if (config('queue.default') !== 'sync') {
+            $queuedKey = $cacheKey . ':queued';
+            if (Cache::add($queuedKey, true, now()->addMinutes(2))) {
+                GenerateListingReviewSummary::dispatch($listingId);
             }
+        }
 
-            try {
-                return (new AiReviewSummery())->summarize($reviews);
-            } catch (\Throwable $e) {
-                report($e);
+        return null;
+    }
 
-                return null;
-            }
+    public function productSections(): JsonResponse
+    {
+        $payload = Cache::remember('api.product-sections.v1', now()->addSeconds(45), function (): array {
+            $eager = [
+                'category:id,name,slug',
+                'brand:id,name,slug,image',
+                'listingAttributes',
+            ];
+
+            $base = static fn () => Listing::query()
+                ->active()
+                ->where('is_approved', 1)
+                ->with($eager);
+
+            return [
+                'latest_products' => $base()->latest()->limit(6)->get(),
+                'popular_products' => $base()
+                    ->where('sold_count', '>', 0)
+                    ->orderByDesc('sold_count')
+                    ->latest('id')
+                    ->limit(6)
+                    ->get(),
+                'discounted_products' => $base()
+                    ->where(function ($query) {
+                        $query->where(function ($q) {
+                            $q->where('has_attributes', true)
+                                ->whereHas('listingAttributes', fn ($attr) => $attr->where('discount_amount', '>', 0));
+                        })->orWhere(function ($q) {
+                            $q->where('has_attributes', false)
+                                ->where('discount_type', '!=', 'none')
+                                ->where('discount_value', '>', 0);
+                        });
+                    })
+                    ->latest()
+                    ->limit(6)
+                    ->get(),
+            ];
         });
+
+        return $this->successResponse(
+            data: [
+                'latest_products' => ListingResource::withDetails($payload['latest_products']),
+                'popular_products' => ListingResource::withDetails($payload['popular_products']),
+                'discounted_products' => ListingResource::withDetails($payload['discounted_products']),
+            ],
+            message: 'Product sections fetched successfully',
+        );
     }
 
     public function listingFilter(Request $request): JsonResponse
@@ -233,7 +277,7 @@ class HomeScreenController extends Controller
                 $q->where('price', '<=', $maxPrice);
             })
             ->when($rating !== null, function ($q) use ($rating) {
-                $q->where('avg_rating', '<=', $rating);
+                $q->where('avg_rating', '>=', $rating);
             })
             // provider
             ->when($providerId !== null, function ($q) use ($providerId) {
@@ -312,9 +356,19 @@ class HomeScreenController extends Controller
         $rating = $this->resolveFilterValue($request, $aiFilters, 'rating');
         $providerId = $this->resolveFilterValue($request, $aiFilters, 'provider_id');
 
-        $categories = Category::active()->isCategory()->orderBy('order')->get();
-        $brands = Brand::where('status', 1)->get();
-        $providers = Provider::where('status', 1)->latest()->take(20)->get();
+        $includeTaxonomy = ! $request->has('with_taxonomy') || $request->boolean('with_taxonomy');
+        $taxonomy = $includeTaxonomy
+            ? Cache::remember('api.catalog.filter-taxonomy.v1', now()->addMinutes(3), static function (): array {
+                return [
+                    'categories' => Category::active()->isCategory()->orderBy('order')->get(),
+                    'brands' => Brand::where('status', 1)->orderBy('name')->get(),
+                    'providers' => Provider::where('status', 1)->latest()->take(20)->get(),
+                ];
+            })
+            : ['categories' => collect(), 'brands' => collect(), 'providers' => collect()];
+        $categories = $taxonomy['categories'];
+        $brands = $taxonomy['brands'];
+        $providers = $taxonomy['providers'];
 
         $priceRange = Listing::active()->where('is_approved', 1)
             ->when($categoryId !== null, function ($q) use ($categoryId) {
@@ -332,15 +386,15 @@ class HomeScreenController extends Controller
             })->when($maxPrice !== null, function ($q) use ($maxPrice) {
                 $q->where('price', '<=', $maxPrice);
             })->when($rating !== null, function ($q) use ($rating) {
-                $q->where('avg_rating', '<=', $rating);
+                $q->where('avg_rating', '>=', $rating);
             })
             ->selectRaw('MIN(price) as min_price, MAX(price) as max_price')->first();
 
         return $this->successResponse(
             data: [
-                'categories' => CategoryResource::withChildren($categories, true),
-                'brands' => BrandResource::collection($brands),
-                'providers' => ProviderResource::collection($providers),
+                'categories' => $includeTaxonomy ? CategoryResource::withChildren($categories, true) : null,
+                'brands' => $includeTaxonomy ? BrandResource::collection($brands) : null,
+                'providers' => $includeTaxonomy ? ProviderResource::collection($providers) : null,
                 'price_range' => [
                     'min_price' => $priceRange->min_price ?? '0.00',
                     'max_price' => $priceRange->max_price ?? '0.00',
@@ -363,14 +417,16 @@ class HomeScreenController extends Controller
                     $q->whereNull('parent_id')
                         ->where('status', 'approved')
                         ->with([
-                            'buyer',
+                            'buyer:id,username,first_name,last_name,avatar',
                             'reply' => function ($replyQuery) {
-                                $replyQuery->where('status', 'approved')->with('buyer');
+                                $replyQuery->where('status', 'approved')
+                                    ->with('buyer:id,username,first_name,last_name,avatar');
                             },
                         ])
-                        ->latest();
+                        ->latest()
+                        ->limit(5);
                 },
-                'approvedReviews:id,listing_id,rating',
+                'images:id,listing_id,image_path',
                 'listingAttributes' => function ($query) {
                     $query
                         ->select('id', 'group', 'label', 'listing_id', 'qty', 'price', 'discount_type', 'final_price', 'discount_amount');
@@ -430,11 +486,12 @@ class HomeScreenController extends Controller
             '4' => (int) ($ratingGroups[4] ?? 0),
             '5' => (int) ($ratingGroups[5] ?? 0),
         ];
+        $totalReviews = array_sum($reviewCountByRating);
 
         return $this->successResponse(
             data: [
                 'listing_id' => $listing->id,
-                'total_reviews' => (int) $listing->approvedReviews()->count(),
+                'total_reviews' => $totalReviews,
                 'review_count_by_rating' => $reviewCountByRating,
                 'review_summary' => $this->getCachedReviewSummary((int) $listing->id),
                 'reviews' => ListingReviewResource::collection($reviews),
@@ -450,11 +507,11 @@ class HomeScreenController extends Controller
      */
     public function getTrendingCategories(): JsonResponse
     {
-        $trendingCategories = Category::active()
+        $trendingCategories = Cache::remember('api.catalog.trending-categories.v1', now()->addMinutes(3), static fn() => Category::active()
             ->trending()
             ->isCategory()
             ->orderBy('order', 'asc')
-            ->get();
+            ->get());
 
         return $this->successResponse(
             data: CategoryResource::collection($trendingCategories),
@@ -467,10 +524,10 @@ class HomeScreenController extends Controller
      */
     public function getPopularBrands(): JsonResponse
     {
-        $popularBrands = Brand::where('status', 1)
+        $popularBrands = Cache::remember('api.catalog.popular-brands.v1', now()->addMinutes(3), static fn() => Brand::where('status', 1)
             ->isPopular()
             ->orderBy('name', 'asc')
-            ->get();
+            ->get());
 
         return $this->successResponse(
             data: BrandResource::collection($popularBrands),
@@ -483,9 +540,9 @@ class HomeScreenController extends Controller
      */
     public function getPopularProviders(): JsonResponse
     {
-        $popularProviders = Provider::where('status', 1)
+        $popularProviders = Cache::remember('api.catalog.popular-providers.v1', now()->addMinutes(3), static fn() => Provider::where('status', 1)
             ->orderBy('name', 'asc')
-            ->get();
+            ->get());
 
         return $this->successResponse(
             data: ProviderResource::collection($popularProviders),
@@ -507,9 +564,9 @@ class HomeScreenController extends Controller
 
         $code = trim($code);
 
-        $coupon = Coupon::query()
-            ->whereRaw('LOWER(code) = ?', [strtolower($code)])
-            ->first();
+        // Default MySQL collations are case-insensitive, so a direct comparison
+        // preserves normal coupon behavior while allowing an index on `code`.
+        $coupon = Coupon::query()->where('code', $code)->first();
 
         if (!$coupon) {
             return $this->validationErrorResponse(__('Invalid coupon code.'));

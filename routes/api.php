@@ -16,7 +16,6 @@ use Illuminate\Support\Facades\Route;
 // General Controller
 Route::controller(GeneralController::class)->group(function () {
     Route::get('get-countries', 'getCountries');
-    Route::get('get-coins', 'getCoins');
 
     Route::get('get-settings', 'getSettings');
     Route::get('get-languages', 'getLanguages');
@@ -26,6 +25,7 @@ Route::controller(GeneralController::class)->group(function () {
 
 // App Home Screen
 Route::get('home', [HomeScreenController::class, 'index']);
+Route::get('product-sections', [HomeScreenController::class, 'productSections']);
 Route::get('coupon/{code}', [HomeScreenController::class, 'couponByCode']);
 Route::get('products', [HomeScreenController::class, 'listingFilter']);
 Route::get('filter-data', [HomeScreenController::class, 'filterData']);
@@ -84,15 +84,6 @@ Route::controller(OTPVerificationController::class)->group(function () {
 // Register
 Route::controller(RegisterController::class)->group(function () {
     Route::post('register', 'store');
-});
-
-Route::middleware(['auth:sanctum', 'throttle:6,1'])->group(function () {
-    // email verification
-    Route::controller(EmailVerificationController::class)->prefix('email/verify')->group(function () {
-        Route::post('/', 'verify');
-        Route::post('email-send', 'sendVerifyEmail');
-    });
-
 });
 
 // Forgot Password

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\Performance\DatabaseAvailability;
 use App\Enums\NavigationType;
 use App\Enums\TxnType;
 use App\Models\Category;
@@ -39,7 +40,7 @@ class ViewServiceProvider extends ServiceProvider
     public function boot()
     {
 
-        if (App::dbConnectionCheck()) {
+        if (DatabaseAvailability::check()) {
             View::composer(['backend.include.__side_nav', 'backend.setting.site_setting.include.__global'], function ($view) {
                 $view->with([
                     'landingSections' => cache()->remember('landingSections', 60 * 60 * 24, function () {
@@ -64,7 +65,7 @@ class ViewServiceProvider extends ServiceProvider
                         return Category::select(['id', 'name', 'image', 'slug'])->isCategory()->active()->orderBy('order')->get();
                     }),
                     'firstOrderBonus' => auth()->check() ? cache()->remember('first_order_bonus.' . auth()->id(), 60 * 5, function () {
-                        return auth()->user()->transaction()->where('type', TxnType::ProductOrder)->count() == 0;
+                        return ! auth()->user()->transaction()->where('type', TxnType::ProductOrder)->exists();
                     }) : true,
                 ]);
             });
@@ -134,6 +135,9 @@ class ViewServiceProvider extends ServiceProvider
 
                         ->select('sender_id', 'receiver_id', 'created_at', 'message', 'id', 'seen')
                         ->latest()
+                        // The header only renders recent conversations. Do not load a
+                        // user's complete chat history on every page request.
+                        ->limit(100)
                         ->get()->filter(function ($chat) use (&$chattedUserList) {
                             $checkId = null;
 

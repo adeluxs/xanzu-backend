@@ -20,7 +20,7 @@ class NotificationController extends Controller
     {
         $notifications = Notification::where('for', 'admin')->latest()->take(10)->get();
         $totalUnread = Notification::where('for', 'admin')->where('read', 0)->count();
-        $totalCount = Notification::where('for', 'admin')->get()->count();
+        $totalCount = Notification::where('for', 'admin')->count();
         $lucideCall = true;
 
         return view('global.__notification_data', compact('notifications', 'totalUnread', 'totalCount', 'lucideCall'))->render();

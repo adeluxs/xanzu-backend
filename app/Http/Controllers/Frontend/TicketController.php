@@ -28,8 +28,10 @@ class TicketController extends Controller
                     ->orWhere('uuid', 'LIKE', '%'.request('subject').'%');
             })
             ->when(request('daterange'), function ($query) use ($from_date, $to_date) {
-                $query->whereDate('created_at', '>=', Date::parse($from_date)->format('Y-m-d'));
-                $query->whereDate('created_at', '<=', Date::parse($to_date)->format('Y-m-d'));
+                $query->whereBetween('created_at', [
+                    Date::parse($from_date)->startOfDay(),
+                    Date::parse($to_date)->endOfDay(),
+                ]);
             })
             ->paginate(request('limit', 15))
             ->withQueryString();

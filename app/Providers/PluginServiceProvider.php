@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\Performance\DatabaseAvailability;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use Remotelywork\Installer\Repository\App;
@@ -27,7 +28,7 @@ class PluginServiceProvider extends ServiceProvider
     public function boot()
     {
 
-        if (App::dbConnectionCheck() && Schema::hasTable('plugins')) {
+        if (DatabaseAvailability::check() && Schema::hasTable('plugins')) {
 
             // Nexmo sms plugin
             if (plugin_active('Nexmo')) {

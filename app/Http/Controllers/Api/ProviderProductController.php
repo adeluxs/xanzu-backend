@@ -19,6 +19,7 @@ use App\Services\ProviderProducts\ProviderProductGatewayResolver;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -35,17 +36,18 @@ class ProviderProductController extends Controller
 
     public function config()
     {
-        $categories = CategoryResource::withChildren(Category::active()
-            ->trending()
-            ->isCategory()
-            ->orderBy('order')
-            ->get(['id', 'name']));
-        $brands = BrandResource::collection(Brand::active()->get(['id', 'name']));
+        $payload = Cache::remember('api.provider-product.config.v1', now()->addMinutes(5), function (): array {
+            return [
+                'categories' => CategoryResource::withChildren(Category::active()
+                    ->trending()
+                    ->isCategory()
+                    ->orderBy('order')
+                    ->get(['id', 'name'])),
+                'brands' => BrandResource::collection(Brand::active()->get(['id', 'name'])),
+            ];
+        });
 
-        return $this->successResponse([
-            'categories' => $categories,
-            'brands' => $brands,
-        ]);
+        return $this->successResponse($payload);
     }
 
     public function products(Request $request): JsonResponse
@@ -57,7 +59,12 @@ class ProviderProductController extends Controller
             $query->search($request->input('search'));
         })->whereNotNull('provider_product_id')->when($request->filled('category_id'), function ($query) use ($request) {
             $query->where('category_id', $request->input('category_id'));
-        })->paginate($request->input('per_page', 20));
+        })->with([
+            'category:id,name',
+            'listingAttributes:id,listing_id,qty',
+        ])->withCount([
+            'deliveryItems as available_delivery_items_count' => fn ($query) => $query->deliveryAble()->whereNull('order_id'),
+        ])->paginate($request->input('per_page', 20));
 
         return $this->successResponse(data: [
             'products' => ListingResource::frontend($products),

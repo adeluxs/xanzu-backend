@@ -20,8 +20,10 @@ class TransactionController extends Controller
         $transactions = Transaction::where('user_id', auth()->id())
             ->search(request('trx'))
             ->when(request('daterange'), function ($query) use ($from_date, $to_date) {
-                $query->whereDate('created_at', '>=', Date::parse($from_date))
-                    ->whereDate('created_at', '<=', Date::parse($to_date));
+                $query->whereBetween('created_at', [
+                    Date::parse($from_date)->startOfDay(),
+                    Date::parse($to_date)->endOfDay(),
+                ]);
             })
             ->when($type && $type !== 'all', function ($query) use ($type) {
                 $query->type($type);

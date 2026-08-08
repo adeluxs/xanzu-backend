@@ -52,7 +52,11 @@ class TicketController extends Controller
         $service = new TicketService;
 
         try {
-            $message = $ticket = $service->reply($request, $uuid);
+            $ticket = Ticket::query()
+                ->whereBelongsTo($request->user())
+                ->where('uuid', $uuid)
+                ->firstOrFail();
+            $message = $service->reply($request, $ticket);
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (\Throwable $th) {
@@ -62,16 +66,42 @@ class TicketController extends Controller
         return $this->successResponse(TicketMessageResource::make($message), 'Ticket replied successfully');
     }
 
-    public function show(string $id)
+    public function show(Request $request, string $id)
     {
-        $ticket = Ticket::uuid($id);
+        $ticket = Ticket::query()
+            ->whereBelongsTo($request->user())
+            ->where('uuid', $id)
+            ->firstOrFail();
 
-        $messages = Message::where('ticket_id', $ticket->id)->with(['parent', 'user'])->oldest('id')->get();
+        $limit = min(100, max(20, $request->integer('message_limit', 60)));
+        $beforeId = $request->integer('before_id');
+
+        $messageQuery = Message::query()
+            ->where('ticket_id', $ticket->id)
+            ->with([
+                'parent:id,message,model',
+                'user',
+            ]);
+
+        if ($beforeId > 0) {
+            $messageQuery->where('id', '<', $beforeId);
+        }
+
+        // Fetch newest first so the database can use the ticket/id index, then
+        // reverse the small page for normal chronological chat rendering.
+        $page = $messageQuery->latest('id')->limit($limit + 1)->get();
+        $hasMore = $page->count() > $limit;
+        $messages = $page->take($limit)->sortBy('id')->values();
 
         return $this->successResponse(
             data: [
                 'ticket' => new TicketResource($ticket),
                 'messages' => TicketMessageResource::collection($messages),
+            ],
+            meta: [
+                'has_more_messages' => $hasMore,
+                'oldest_message_id' => $messages->first()?->id,
+                'message_limit' => $limit,
             ],
         );
     }
@@ -81,7 +111,7 @@ class TicketController extends Controller
         $service = new TicketService;
 
         try {
-            $ticket = Ticket::uuid($uuid);
+            $ticket = Ticket::query()->whereBelongsTo($request->user())->where('uuid', $uuid)->firstOrFail();
             $ticket = $service->close($ticket);
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());

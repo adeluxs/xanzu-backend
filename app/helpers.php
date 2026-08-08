@@ -29,6 +29,7 @@ use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Request;
 use Illuminate\Support\Fluent;
 
@@ -179,30 +180,66 @@ if (!function_exists('getIpAddress')) {
 if (!function_exists('getLocation')) {
     function getLocation()
     {
-        $clientIp = request()->ip();
-        $ip = $clientIp == '127.0.0.1' ? '103.77.188.202' : $clientIp;
+        $clientIp = (string) request()->ip();
+        $isLocal = in_array($clientIp, ['127.0.0.1', '::1'], true)
+            || str_starts_with($clientIp, '10.')
+            || str_starts_with($clientIp, '192.168.')
+            || preg_match('/^172\.(1[6-9]|2\d|3[01])\./', $clientIp);
 
-        $location = json_decode(curl_get_file_contents('http://ip-api.com/json/' . $ip), true);
-
-        if ($location['status'] == 'fail') {
+        // Country selection is a convenience feature and must never make the
+        // app bootstrap wait indefinitely on a third-party IP service.
+        if ($isLocal) {
             return app(Fluent::class, [
                 'country_code' => 0,
-                'name' => 'Bangladesh',
-                'dial_code' => '+880',
-                'ip' => $ip,
+                'name' => '',
+                'dial_code' => '',
+                'ip' => $clientIp,
             ]);
         }
-        $currentCountry = collect(getCountries())->first(function ($value, $key) use ($location) {
-            return $value['code'] == $location['countryCode'];
-        });
-        $location = [
-            'country_code' => data_get($currentCountry, 'code', 0),
-            'name' => $currentCountry['name'],
-            'dial_code' => $currentCountry['dial_code'],
-            'ip' => $location['query'] ?? [],
-        ];
 
-        return new Fluent($location);
+        return Cache::remember('geo.ip.' . sha1($clientIp), now()->addHours(6), function () use ($clientIp) {
+            try {
+                $location = Http::connectTimeout(1)
+                    ->timeout(2)
+                    ->retry(1, 100, throw: false)
+                    ->acceptJson()
+                    ->get('http://ip-api.com/json/' . urlencode($clientIp), [
+                        'fields' => 'status,countryCode,query',
+                    ])
+                    ->json();
+            } catch (\Throwable) {
+                $location = null;
+            }
+
+            if (!is_array($location) || ($location['status'] ?? 'fail') !== 'success') {
+                return app(Fluent::class, [
+                    'country_code' => 0,
+                    'name' => '',
+                    'dial_code' => '',
+                    'ip' => $clientIp,
+                ]);
+            }
+
+            $currentCountry = collect(getCountries())->first(
+                fn ($value) => ($value['code'] ?? null) === ($location['countryCode'] ?? null)
+            );
+
+            if (!$currentCountry) {
+                return app(Fluent::class, [
+                    'country_code' => $location['countryCode'] ?? 0,
+                    'name' => '',
+                    'dial_code' => '',
+                    'ip' => $location['query'] ?? $clientIp,
+                ]);
+            }
+
+            return app(Fluent::class, [
+                'country_code' => data_get($currentCountry, 'code', 0),
+                'name' => data_get($currentCountry, 'name', ''),
+                'dial_code' => data_get($currentCountry, 'dial_code', ''),
+                'ip' => $location['query'] ?? $clientIp,
+            ]);
+        });
     }
 }
 

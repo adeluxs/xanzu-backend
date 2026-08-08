@@ -16,6 +16,7 @@ use App\Models\Order;
 use App\Models\Ticket;
 use App\Models\Transaction;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Date;
@@ -25,167 +26,208 @@ class DashboardController extends Controller
 {
     public function dashboard(Request $request)
     {
-        $transaction = new Transaction;
-        $user = User::query();
-        $admin = Admin::query();
-
-        $totalDeposit = Transaction::where('status', TxnStatus::Success)->where(function ($query) {
-            $query->where('type', TxnType::ManualDeposit)
-                ->orWhere('type', TxnType::Deposit);
-        });
-
-        $disabledUser = User::where('status', 0)->count();
-
-        $totalStaff = Admin::count();
-
-        $latestUser = User::latest()->take(5)->get();
-
-        $latestOrders = Order::with(['seller', 'buyer', 'items.listing.category'])->latest()->take(8)->get();
-
-        $totalGateway = Gateway::where('status', true)->count();
-
-        $totalWithdraw = Transaction::where('type', [TxnType::Withdraw, TxnType::WithdrawAuto]);
-
-        $withdrawCount = Transaction::where('type', TxnType::Withdraw)
-            ->where('status', 'pending')
-            ->count();
-
-        $kycCount = User::where('kyc', KYCStatus::Pending)->count();
-
-        $depositCount = Transaction::where('type', TxnType::ManualDeposit)
-            ->where('status', 'pending')
-            ->count();
-
-        $totalReferral = User::where('ref_id', '!=', null)->count();
-
-        // ============================= Start dashboard statistics =============================================
-
-        $startDate = request()->start_date ? Date::createFromDate(request()->start_date) : Date::now()->subDays(7);
-        $endDate = request()->end_date ? Date::createFromDate(request()->end_date) : Date::now();
-        $dateArray = array_fill_keys(generate_date_range_array($startDate, $endDate), 0);
-
-        $dateFilter = [request()->start_date ? $startDate : $startDate->subDays(1), $endDate->addDays(1)];
-
-        $depositStatistics = $totalDeposit->whereBetween('created_at', $dateFilter)->get()->groupBy('day')->map(function ($group) {
-            return $group->sum('amount');
-        })->toArray();
-
-        $depositStatistics = array_replace($dateArray, $depositStatistics);
-
-        $withdrawStatistics = $totalWithdraw->whereBetween('created_at', $dateFilter)->get()->groupBy('day')->map(function ($group) {
-            return $group->sum('amount');
-        })->toArray();
-
-
-        $bnplOrderStatistics = Order::where('status', '!=', 'pending')->whereIsBnpl(true)->whereBetween('order_date', $dateFilter)->get()->groupBy('day')->map(function ($group) {
-            return $group->sum('total_price');
-        })->toArray();
-        $bnplOrderStatistics = array_replace($dateArray, $bnplOrderStatistics);
-        // $withdrawStatistics = array_replace($dateArray, $withdrawStatistics);
-
-        // order count statistics
-        $OrderStatistics = Order::select(['*', DB::raw("DATE_FORMAT(order_date, '%d %b') AS order_date")])->where('status', '!=', 'pending')->whereBetween('order_date', $dateFilter)->get()->groupBy('order_date')->map(function ($group) {
-            return $group->sum('total_price');
-        })->toArray();
-        $OrderStatistics = array_replace($dateArray, $OrderStatistics);
-
-        // dd($OrderStatistics, $withdrawStatistics);
-
-        // ============================= End dashboard statistics =============================================
-
-        // set cache for 1 minute
-        $loginActivities = Cache::remember('login-activities', 60, function () {
-            return LoginActivities::get();
-        });
-
-        $browser = $loginActivities->groupBy('browser')->map->count()->toArray();
-        $platform = $loginActivities->groupBy('platform')->map->count()->toArray();
-
-        $country = User::select('country', DB::raw('count(*) as count'))
-            ->groupBy('country')
-            ->orderByDesc('count')
-            ->limit(5)
-            ->pluck('count', 'country')
-            ->toArray();
-
+        [$startDate, $endDate, $dateArray] = $this->dateWindow($request);
         $symbol = setting('currency_symbol', 'global');
 
-        $bnplOrderCount = Order::whereIsBnpl(true)
-            ->select([DB::raw('DATE(created_at) as day'), DB::raw('count(*) as bnpl_count')])
-            // last 7 days
-            ->whereDate('created_at', '>=', now()->subDays(7))
-            ->groupBy(DB::raw('DATE(created_at)'))
-            ->pluck('bnpl_count', 'day')->toArray();
+        // Charts are aggregated in SQL. The previous implementation loaded all
+        // matching transactions/orders into PHP and grouped them in memory.
+        $depositStatistics = $this->dailyTransactionSum(
+            $startDate,
+            $endDate,
+            [TxnType::Deposit->value, TxnType::ManualDeposit->value],
+            TxnStatus::Success->value,
+            $dateArray,
+        );
+        $withdrawStatistics = $this->dailyTransactionSum(
+            $startDate,
+            $endDate,
+            [TxnType::Withdraw->value, TxnType::WithdrawAuto->value],
+            null,
+            $dateArray,
+        );
+        $orderStatistics = $this->dailyOrderSum($startDate, $endDate, false, $dateArray);
+        $bnplOrderStatistics = $this->dailyBnplCount($startDate, $endDate, $dateArray);
 
-        $total_category = Category::count();
-        $total_coupons = Coupon::count();
-        $total_listing = Listing::count();
+        // AJAX chart refresh should not execute the expensive non-chart
+        // dashboard queries (latest orders, geo breakdown, global counters).
+        if ($request->ajax() && $request->input('type') === 'site') {
+            return response()->json([
+                'date_label' => $dateArray,
+                'deposit_statistics' => $depositStatistics,
+                'withdraw_statistics' => $withdrawStatistics,
+                'listing_order_statistics' => $orderStatistics,
+                'bnpl_order_statistics' => $bnplOrderStatistics,
+                'symbol' => $symbol,
+            ]);
+        }
 
-        // order grp by status
-        $OrderStatusStatistics = Order::select(['status', DB::raw('count(*) as analysis_count')])
-            ->when(request()->start_date, function ($query) use ($dateFilter) {
-                $query->whereBetween('order_date', $dateFilter);
-            }, function ($query) {
-                $query->whereDate('order_date', '>=', now()->subDays(7));
-            })
-            ->groupBy(DB::raw('status'))
-            ->oldest('analysis_count')
+        $userStats = User::query()->selectRaw(
+            'SUM(CASE WHEN user_type = ? THEN 1 ELSE 0 END) AS total_buyers, '
+            .'SUM(CASE WHEN user_type = ? THEN 1 ELSE 0 END) AS total_merchants, '
+            .'SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) AS disabled_user, '
+            .'SUM(CASE WHEN kyc = ? THEN 1 ELSE 0 END) AS pending_kyc, '
+            .'SUM(CASE WHEN ref_id IS NOT NULL THEN 1 ELSE 0 END) AS total_referral',
+            ['buyer', 'merchant', KYCStatus::Pending->value]
+        )->first();
+
+        $transactionStats = Transaction::query()->selectRaw(
+            'SUM(CASE WHEN status = ? AND type IN (?, ?) THEN CAST(amount AS DECIMAL(20,8)) ELSE 0 END) AS total_deposit, '
+            .'SUM(CASE WHEN status = ? AND type IN (?, ?) THEN CAST(amount AS DECIMAL(20,8)) ELSE 0 END) AS total_withdraw, '
+            .'SUM(CASE WHEN status = ? AND type IN (?, ?) THEN 1 ELSE 0 END) AS pending_withdraw, '
+            .'SUM(CASE WHEN status = ? AND type = ? THEN 1 ELSE 0 END) AS pending_manual_deposit, '
+            .'SUM(CASE WHEN status = ? AND target_id IS NOT NULL AND target_type = ? AND type = ? THEN CAST(amount AS DECIMAL(20,8)) ELSE 0 END) AS deposit_bonus',
+            [
+                TxnStatus::Success->value, TxnType::Deposit->value, TxnType::ManualDeposit->value,
+                TxnStatus::Success->value, TxnType::Withdraw->value, TxnType::WithdrawAuto->value,
+                TxnStatus::Pending->value, TxnType::Withdraw->value, TxnType::WithdrawAuto->value,
+                TxnStatus::Pending->value, TxnType::ManualDeposit->value,
+                TxnStatus::Success->value, 'deposit', TxnType::Referral->value,
+            ]
+        )->first();
+
+        $staticCounts = Cache::remember('admin.dashboard.static-counts.v2', now()->addSeconds(60), fn () => [
+            'total_staff' => Admin::count(),
+            'total_gateway' => Gateway::where('status', true)->count(),
+            'total_category' => Category::count(),
+            'total_coupons' => Coupon::count(),
+            'total_listing' => Listing::count(),
+            'total_ticket' => Ticket::count(),
+        ]);
+
+        // Aggregate login activity in the database rather than caching every
+        // historical login row in application memory.
+        $browser = Cache::remember('admin.dashboard.login-browser.v2', now()->addMinutes(2), fn () =>
+            LoginActivities::query()->select('browser', DB::raw('COUNT(*) AS aggregate_count'))
+                ->whereNotNull('browser')->groupBy('browser')->pluck('aggregate_count', 'browser')->toArray()
+        );
+        $platform = Cache::remember('admin.dashboard.login-platform.v2', now()->addMinutes(2), fn () =>
+            LoginActivities::query()->select('platform', DB::raw('COUNT(*) AS aggregate_count'))
+                ->whereNotNull('platform')->groupBy('platform')->pluck('aggregate_count', 'platform')->toArray()
+        );
+
+        $country = Cache::remember('admin.dashboard.country-top5.v2', now()->addMinutes(2), fn () =>
+            User::query()->select('country', DB::raw('COUNT(*) AS aggregate_count'))
+                ->whereNotNull('country')->where('country', '!=', '')
+                ->groupBy('country')->orderByDesc('aggregate_count')->limit(5)
+                ->pluck('aggregate_count', 'country')->toArray()
+        );
+
+        $orderStatusStatistics = Order::query()
+            ->select('status', DB::raw('COUNT(*) AS analysis_count'))
+            ->whereBetween('order_date', [$startDate, $endDate])
+            ->groupBy('status')
             ->pluck('analysis_count', 'status');
 
         $data = [
-            'withdraw_count' => $withdrawCount,
-            'kyc_count' => $kycCount,
-            'deposit_count' => $depositCount,
-
-            'total_buyers' => (clone $user)->where('user_type', 'buyer')->count(),
-            'total_merchants' => (clone $user)->where('user_type', 'merchant')->count(),
-            'disabled_user' => $disabledUser,
-            'latest_user' => $latestUser,
-            'latest_orders' => $latestOrders,
-
-            'total_staff' => $totalStaff,
-
-            'total_deposit' => $totalDeposit->sum('amount'),
-            'total_withdraw' => $transaction->totalWithdraw()->sum('amount'),
-            'total_referral' => $totalReferral,
-            'total_category' => $total_category,
-            'total_coupons' => $total_coupons,
-            'total_listing' => $total_listing,
-
+            'withdraw_count' => (int) ($transactionStats->pending_withdraw ?? 0),
+            'kyc_count' => (int) ($userStats->pending_kyc ?? 0),
+            'deposit_count' => (int) ($transactionStats->pending_manual_deposit ?? 0),
+            'total_buyers' => (int) ($userStats->total_buyers ?? 0),
+            'total_merchants' => (int) ($userStats->total_merchants ?? 0),
+            'disabled_user' => (int) ($userStats->disabled_user ?? 0),
+            'latest_user' => User::query()->latest()->limit(5)->get(),
+            'latest_orders' => Order::query()->with([
+                'seller:id,first_name,last_name,email,avatar',
+                'buyer:id,first_name,last_name,email,avatar',
+                'items.listing:id,product_name,category_id,thumbnail',
+                'items.listing.category:id,name,slug',
+            ])->latest()->limit(8)->get(),
+            'total_staff' => $staticCounts['total_staff'],
+            'total_deposit' => (float) ($transactionStats->total_deposit ?? 0),
+            'total_withdraw' => (float) ($transactionStats->total_withdraw ?? 0),
+            'total_referral' => (int) ($userStats->total_referral ?? 0),
+            'total_category' => $staticCounts['total_category'],
+            'total_coupons' => $staticCounts['total_coupons'],
+            'total_listing' => $staticCounts['total_listing'],
             'date_label' => $dateArray,
             'deposit_statistics' => $depositStatistics,
             'withdraw_statistics' => $withdrawStatistics,
-            'listing_order_statistics' => $OrderStatistics,
-
-            'bnpl_order_statistics' => $bnplOrderCount,
-
-            'start_date' => isset(request()->start_date) ? $startDate : $startDate->addDays(1)->format('m/d/Y'),
-            'end_date' => isset(request()->end_date) ? $endDate : $endDate->subDays(1)->format('m/d/Y'),
-
-            'deposit_bonus' => $transaction->totalDepositBonus(),
-            'total_gateway' => $totalGateway,
-            'total_ticket' => Ticket::count(),
-
+            'listing_order_statistics' => $orderStatistics,
+            'bnpl_order_statistics' => $bnplOrderStatistics,
+            'start_date' => $startDate->format('m/d/Y'),
+            'end_date' => $endDate->format('m/d/Y'),
+            'deposit_bonus' => (float) ($transactionStats->deposit_bonus ?? 0),
+            'total_gateway' => $staticCounts['total_gateway'],
+            'total_ticket' => $staticCounts['total_ticket'],
             'browser' => $browser,
             'platform' => $platform,
             'country' => $country,
             'symbol' => $symbol,
+            'order_status_statistics' => $orderStatusStatistics,
         ];
-        // Date range filter for statistics
-        if (request()->ajax()) {
-
-            if ($request->type == 'site') {
-                return response()->json([
-                    'date_label' => $dateArray,
-                    'deposit_statistics' => $depositStatistics,
-                    'withdraw_statistics' => $withdrawStatistics,
-                    'listing_order_statistics' => $OrderStatistics,
-                    'bnpl_order_statistics' => $bnplOrderCount,
-                    'symbol' => $symbol,
-                ]);
-            }
-        }
 
         return view('backend.dashboard', compact('data'));
+    }
+
+    private function dateWindow(Request $request): array
+    {
+        $start = $request->filled('start_date')
+            ? Date::parse($request->input('start_date'))->startOfDay()
+            : Date::now()->subDays(7)->startOfDay();
+        $end = $request->filled('end_date')
+            ? Date::parse($request->input('end_date'))->endOfDay()
+            : Date::now()->endOfDay();
+
+        if ($start->gt($end)) {
+            [$start, $end] = [$end->copy()->startOfDay(), $start->copy()->endOfDay()];
+        }
+
+        $labels = array_fill_keys(generate_date_range_array($start->copy(), $end->copy()), 0);
+
+        return [$start, $end, $labels];
+    }
+
+    private function dailyTransactionSum($start, $end, array $types, ?string $status, array $labels): array
+    {
+        $query = Transaction::query()
+            ->whereIn('type', $types)
+            ->whereBetween('created_at', [$start, $end]);
+        if ($status !== null) {
+            $query->where('status', $status);
+        }
+
+        $rows = $query
+            ->selectRaw('DATE(created_at) AS aggregate_date, SUM(CAST(amount AS DECIMAL(20,8))) AS aggregate_total')
+            ->groupByRaw('DATE(created_at)')
+            ->pluck('aggregate_total', 'aggregate_date');
+
+        foreach ($rows as $day => $amount) {
+            $labels[Date::parse($day)->format('d M')] = (float) $amount;
+        }
+
+        return $labels;
+    }
+
+    private function dailyOrderSum($start, $end, bool $bnplOnly, array $labels): array
+    {
+        $rows = Order::query()
+            ->where('status', '!=', 'pending')
+            ->when($bnplOnly, fn (Builder $query) => $query->where('is_bnpl', true))
+            ->whereBetween('order_date', [$start, $end])
+            ->selectRaw('DATE(order_date) AS aggregate_date, SUM(total_price) AS aggregate_total')
+            ->groupByRaw('DATE(order_date)')
+            ->pluck('aggregate_total', 'aggregate_date');
+
+        foreach ($rows as $day => $amount) {
+            $labels[Date::parse($day)->format('d M')] = (float) $amount;
+        }
+
+        return $labels;
+    }
+
+    private function dailyBnplCount($start, $end, array $labels): array
+    {
+        $rows = Order::query()
+            ->where('is_bnpl', true)
+            ->whereBetween('created_at', [$start, $end])
+            ->selectRaw('DATE(created_at) AS aggregate_date, COUNT(*) AS aggregate_total')
+            ->groupByRaw('DATE(created_at)')
+            ->pluck('aggregate_total', 'aggregate_date');
+
+        foreach ($rows as $day => $count) {
+            $labels[Date::parse($day)->format('d M')] = (int) $count;
+        }
+
+        return $labels;
     }
 }

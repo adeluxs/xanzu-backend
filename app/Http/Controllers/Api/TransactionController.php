@@ -12,6 +12,7 @@ use App\Traits\ApiResponse;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Date;
 
 class TransactionController extends Controller
 {
@@ -46,10 +47,9 @@ class TransactionController extends Controller
 
         $query = Transaction::query()
             ->whereBelongsTo($user)
-            ->where(function (Builder $query) {
-                $query->whereRaw('LOWER(method) = ?', ['credit_card'])
-                    ->orWhereRaw('LOWER(method) = ?', ['bnpl']);
-            })
+            // MySQL's default app collation is case-insensitive; direct equality
+            // keeps the composite user/method index usable.
+            ->whereIn('method', ['credit_card', 'bnpl'])
             ->latest();
 
         $transactions = $this->applyCommonFilters($query, $request)->paginate($request->integer('per_page', 15));
@@ -118,7 +118,7 @@ class TransactionController extends Controller
 
         $query = Transaction::query()
             ->whereBelongsTo($user)
-            ->whereRaw('LOWER(method) = ?', ['balance'])
+            ->where('method', 'balance')
             ->latest();
 
         $transactions = $this->applyCommonFilters($query, $request)->paginate($request->integer('per_page', 15));
@@ -142,17 +142,19 @@ class TransactionController extends Controller
                 $query->where('status', $request->input('status'));
             })
             ->when($request->filled('method'), function (Builder $query) use ($request) {
-                $query->whereRaw('LOWER(method) = ?', [strtolower((string) $request->input('method'))]);
+                $query->where('method', strtolower(trim((string) $request->input('method'))));
             })
             ->when($request->filled('date'), function (Builder $query) use ($request) {
-                if (str($request->input('date'))->contains('to')) {
-                    $dates = explode(' to ', $request->input('date'));
-                    $dates = array_map(function ($date) {
-                        return date('Y-m-d', strtotime($date));
-                    }, $dates);
-                    $query->whereBetween(DB::raw('DATE(created_at)'), $dates);
+                $raw = trim((string) $request->input('date'));
+                if (str($raw)->contains(' to ')) {
+                    [$from, $to] = array_pad(explode(' to ', $raw, 2), 2, $raw);
+                    $query->whereBetween('created_at', [
+                        Date::parse($from)->startOfDay(),
+                        Date::parse($to)->endOfDay(),
+                    ]);
                 } else {
-                    $query->whereDate('created_at', $request->input('date'));
+                    $day = Date::parse($raw);
+                    $query->whereBetween('created_at', [$day->copy()->startOfDay(), $day->copy()->endOfDay()]);
                 }
             })
             ->when($request->filled('search'), function (Builder $query) use ($request) {
