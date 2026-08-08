@@ -27,11 +27,21 @@ class DepositMethod extends Model
         return $query->where('gateway_code', $code);
     }
 
+    protected function scopeAuto($query)
+    {
+        return $query->where('type', 'auto');
+    }
+
+    protected function scopeActive($query)
+    {
+        return $query->where('status', 1);
+    }
+
     protected function gatewayLogo(): Attribute
     {
         return Attribute::make(get: function () {
             if ($this->logo == null) {
-                return asset($this->gateway->logo);
+                return asset($this->gateway?->logo ?? 'frontend/default-old/images/payment/balance.png');
             }
 
             return asset($this->logo);

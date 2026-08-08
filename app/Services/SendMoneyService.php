@@ -5,7 +5,7 @@ namespace App\Services;
 use App\Enums\TxnStatus;
 use App\Enums\TxnType;
 use App\Facades\Txn\Txn;
-use App\Models\TransferLimit;
+use App\Models\Transaction;
 use App\Models\User;
 use App\Traits\NotifyTrait;
 use Illuminate\Support\Facades\DB;
@@ -19,172 +19,63 @@ class SendMoneyService
 
     public function __construct(private TransferLimitService $transferLimitService) {}
 
-    public function validate(array $data, bool $isAgent = false): void
+    public function validate(array $data, bool $isAgent = false): array
     {
         $sender = auth()->user();
+        if (! $sender) {
+            throw ValidationException::withMessages(['transfer' => __('Unauthorized.')]);
+        }
 
-        Log::info('SendMoneyService@validate: Starting validation', [
-            'user_id' => $sender?->id,
-            'is_agent' => $isAgent,
-            'recipient_phone' => $data['recipient_phone'] ?? null,
-            'amount' => $data['amount'] ?? null,
+        $this->validateFeatureAccess($sender);
+
+        $validator = Validator::make($data, [
+            'recipient_phone' => ['required', 'string', 'max:40'],
+            'recipient_id' => ['nullable', 'integer'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'client_reference' => ['nullable', 'string', 'max:80'],
         ]);
-
-        if (setting('transfer_global_status', 'permission') != '1') {
-            Log::warning('SendMoneyService@validate: Global transfer disabled', [
-                'user_id' => $sender?->id,
-            ]);
-            throw ValidationException::withMessages(['transfer' => __('Transfers are temporarily disabled globally.')]);
-        }
-
-        if (!$isAgent && !$sender->transfer_status) {
-            Log::warning('SendMoneyService@validate: Transfer disabled for user', [
-                'user_id' => $sender?->id,
-                'transfer_status' => $sender->transfer_status,
-            ]);
-            throw ValidationException::withMessages(['transfer' => __('Transfer is not enabled for your account.')]);
-        }
-
-        if (setting('transfer_require_kyc', 'permission') == '1' && !$sender->kyc) {
-            Log::warning('SendMoneyService@validate: KYC required but not verified', [
-                'user_id' => $sender?->id,
-                'kyc_status' => $sender->kyc,
-            ]);
-            throw ValidationException::withMessages(['transfer' => __('KYC verification is required to send money.')]);
-        }
-
-        $rules = [
-            'recipient_phone' => 'required|string',
-            'amount' => 'required|numeric|min:1',
-        ];
-
-        $validator = Validator::make($data, $rules);
-
         if ($validator->fails()) {
-            Log::warning('SendMoneyService@validate: Basic validation failed', [
-                'user_id' => $sender?->id,
-                'errors' => $validator->errors()->all(),
-            ]);
             throw new ValidationException($validator, $validator->errors()->first());
         }
 
-        $normalizedPhone = $this->normalizePhone($data['recipient_phone']);
-        $data['recipient_phone'] = $normalizedPhone;
+        $amount = round((float) $data['amount'], 2);
+        $recipient = $this->resolveRecipient(
+            (string) $data['recipient_phone'],
+            isset($data['recipient_id']) ? (int) $data['recipient_id'] : null
+        );
 
-        Log::info('SendMoneyService@validate: Phone normalized', [
-            'user_id' => $sender?->id,
-            'original_phone' => $data['recipient_phone'] ?? null,
-            'normalized_phone' => $normalizedPhone,
-        ]);
+        $this->validateRecipient($sender, $recipient);
 
-        $recipient = User::where('phone', $normalizedPhone)->first();
-
-        if (!$recipient) {
-            Log::warning('SendMoneyService@validate: Recipient not found', [
-                'user_id' => $sender?->id,
-                'normalized_phone' => $normalizedPhone,
-            ]);
-            throw ValidationException::withMessages(['recipient_phone' => __('Recipient not found.')]);
-        }
-
-        if ($recipient->status != 1) {
-            Log::warning('SendMoneyService@validate: Recipient account not active', [
-                'user_id' => $sender?->id,
-                'recipient_id' => $recipient->id,
-                'recipient_status' => $recipient->status,
-            ]);
-            throw ValidationException::withMessages(['recipient_phone' => __('Recipient account is not active.')]);
-        }
-
-        if ($sender->id == $recipient->id) {
-            Log::warning('SendMoneyService@validate: Self-transfer attempt', [
-                'user_id' => $sender?->id,
-            ]);
-            throw ValidationException::withMessages(['recipient_phone' => __('You cannot send money to yourself.')]);
-        }
-
-        $amount = (float) $data['amount'];
-
-        if ($sender->balance < $amount) {
-            Log::warning('SendMoneyService@validate: Insufficient balance', [
-                'user_id' => $sender?->id,
-                'balance' => $sender->balance,
-                'requested_amount' => $amount,
-            ]);
+        if ((float) $sender->balance < $amount) {
             throw ValidationException::withMessages(['amount' => __('Insufficient balance.')]);
         }
 
-        Log::info('SendMoneyService@validate: Validation passed', [
-            'user_id' => $sender?->id,
-            'recipient_id' => $recipient->id,
+        // Validation and transfer use exactly the same policy. This prevents
+        // the mobile validation step from passing only for the final request to
+        // fail because daily/monthly limits were checked later.
+        $this->transferLimitService->enforce($sender, $amount);
+
+        return [
             'amount' => $amount,
-        ]);
+            'recipient' => $recipient,
+            'recipient_phone' => $recipient->phone,
+        ];
     }
 
     public function normalizePhone(string $phone): string
     {
-        if (str_starts_with($phone, '+')) {
-            Log::info('SendMoneyService@normalizePhone: Phone already has country code', [
-                'phone' => $phone,
-            ]);
-            return $phone;
-        }
-
-        $sender = auth()->user();
-        if ($sender && $sender->country) {
-            $dialCode = getCountryData($sender->country, 'dial_code');
-            if ($dialCode) {
-                Log::info('SendMoneyService@normalizePhone: Prepend sender country dial code', [
-                    'user_id' => $sender->id,
-                    'country' => $sender->country,
-                    'dial_code' => $dialCode,
-                    'original_phone' => $phone,
-                    'normalized_phone' => $dialCode . $phone,
-                ]);
-                return $dialCode . $phone;
-            }
-        }
-
-        $normalized = '+' . ltrim($phone, '0');
-        Log::info('SendMoneyService@normalizePhone: Fallback normalization', [
-            'user_id' => $sender?->id,
-            'original_phone' => $phone,
-            'normalized_phone' => $normalized,
-        ]);
-
-        return $normalized;
+        return $this->phoneCandidates($phone)[0] ?? trim($phone);
     }
 
     public function lookupRecipient(string $phone): ?array
     {
-        $normalizedPhone = $this->normalizePhone($phone);
-
-        Log::info('SendMoneyService@lookupRecipient: Searching for recipient', [
-            'user_id' => auth()->id(),
-            'original_phone' => $phone,
-            'normalized_phone' => $normalizedPhone,
-        ]);
-
-        $recipient = User::where('phone', $normalizedPhone)
-            ->orWhere('phone', 'LIKE', '%' . ltrim($phone, '0'))
-            ->first();
-
-        if (!$recipient) {
-            Log::info('SendMoneyService@lookupRecipient: Recipient not found', [
-                'user_id' => auth()->id(),
-                'normalized_phone' => $normalizedPhone,
-            ]);
+        $recipient = $this->resolveRecipient($phone);
+        if (! $recipient) {
             return null;
         }
 
-        Log::info('SendMoneyService@lookupRecipient: Recipient found', [
-            'user_id' => auth()->id(),
-            'recipient_id' => $recipient->id,
-            'recipient_phone' => $recipient->phone,
-            'recipient_name' => $recipient->full_name,
-        ]);
-
         return [
+            'id' => $recipient->id,
             'full_name' => $recipient->full_name,
             'first_name' => $recipient->first_name,
             'last_name' => $recipient->last_name,
@@ -193,161 +84,307 @@ class SendMoneyService
         ];
     }
 
+    public function transferConfig(User $user): array
+    {
+        $summary = $this->transferLimitService->summary($user);
+        unset($summary['limit_model']);
+
+        $globalEnabled = (bool) setting('transfer_global_status', 'transfer', true);
+        $userEnabled = (bool) $user->transfer_status;
+        $kycRequired = (bool) setting('transfer_require_kyc', 'transfer', false);
+        $kycPassed = ! $kycRequired || (bool) $user->kyc;
+
+        return [
+            'user_balance' => (float) $user->balance,
+            'transfer_status' => $globalEnabled && $userEnabled && $kycPassed,
+            'global_status' => $globalEnabled,
+            'user_status' => $userEnabled,
+            'kyc_required' => $kycRequired,
+            'kyc_verified' => (bool) $user->kyc,
+            'currency' => setting('site_currency', 'global'),
+            'currency_symbol' => setting('currency_symbol', 'global'),
+            'limits' => $summary,
+        ];
+    }
+
     public function sendMoney(array $data, bool $isAgent = false): array
     {
-        $sender = auth()->user();
+        $preflight = $this->validate($data, $isAgent);
+        $senderId = (int) auth()->id();
+        $recipientId = (int) $preflight['recipient']->id;
+        $amount = (float) $preflight['amount'];
+        $clientReference = trim((string) ($data['client_reference'] ?? ''));
 
-        Log::info('SendMoneyService@sendMoney: Starting transfer', [
-            'user_id' => $sender?->id,
-            'is_agent' => $isAgent,
-            'recipient_phone' => $data['recipient_phone'] ?? null,
-            'amount' => $data['amount'] ?? null,
-        ]);
+        if ($clientReference === '') {
+            $clientReference = 'P2P-'.$senderId.'-'.now()->format('YmdHisv').'-'.bin2hex(random_bytes(4));
+        }
 
-        $this->validate($data, $isAgent);
-        $this->transferLimitService->enforce($sender, $amount);
+        $result = DB::transaction(function () use ($senderId, $recipientId, $amount, $clientReference) {
+            // Lock in deterministic id order to serialize concurrent balance
+            // mutations and minimize deadlocks.
+            $users = User::query()
+                ->whereIn('id', [$senderId, $recipientId])
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
 
-        $recipientPhone = $this->normalizePhone($data['recipient_phone']);
-        $recipient = User::where('phone', $recipientPhone)->first();
-        $amount = round((float) $data['amount'], 2);
-        $charge = 0;
-        $finalAmount = $amount;
+            /** @var User|null $sender */
+            $sender = $users->get($senderId);
+            /** @var User|null $recipient */
+            $recipient = $users->get($recipientId);
 
-        Log::info('SendMoneyService@sendMoney: Validation passed, beginning transaction', [
-            'user_id' => $sender->id,
-            'sender_balance_before' => $sender->balance,
-            'recipient_id' => $recipient->id,
-            'recipient_balance_before' => $recipient->balance,
-            'amount' => $amount,
-            'final_amount' => $finalAmount,
-        ]);
+            if (! $sender || ! $recipient) {
+                throw ValidationException::withMessages(['recipient_phone' => __('Recipient not found.')]);
+            }
 
-        DB::beginTransaction();
+            $this->validateFeatureAccess($sender);
+            $this->validateRecipient($sender, $recipient);
 
-        try {
-            $sender->balance -= $finalAmount;
+            // Idempotency: a retry/double tap with the same client reference
+            // returns the already committed sender transaction instead of
+            // moving funds twice.
+            $existing = Transaction::query()
+                ->where('user_id', $sender->id)
+                ->where('type', TxnType::Transfer->value)
+                ->where('approval_cause', $clientReference)
+                ->first();
+
+            if ($existing) {
+                $meta = json_decode((string) $existing->manual_field_data, true) ?: [];
+                if ((int) ($meta['recipient_id'] ?? 0) !== $recipient->id || abs((float) $existing->amount - $amount) > 0.00001) {
+                    throw ValidationException::withMessages([
+                        'transfer' => __('This transfer reference has already been used for different transfer details.'),
+                    ]);
+                }
+
+                return $this->formatTransferResult($existing, $recipient, true);
+            }
+
+            if ((float) $sender->balance < $amount) {
+                throw ValidationException::withMessages(['amount' => __('Insufficient balance.')]);
+            }
+
+            // Re-check while the sender row is locked so two simultaneous
+            // requests cannot both pass the same balance/limit snapshot.
+            $this->transferLimitService->enforce($sender, $amount);
+
+            $sender->balance = round((float) $sender->balance - $amount, 2);
+            $recipient->balance = round((float) $recipient->balance + $amount, 2);
             $sender->save();
-
-            $recipient->balance += $finalAmount;
             $recipient->save();
 
-            Log::info('SendMoneyService@sendMoney: Balances updated', [
-                'user_id' => $sender->id,
-                'sender_balance_after' => $sender->balance,
+            $currency = setting('site_currency', 'global');
+            $meta = [
+                'transfer_reference' => $clientReference,
                 'recipient_id' => $recipient->id,
-                'recipient_balance_after' => $recipient->balance,
-            ]);
-
-            $description = 'Transfer to ' . $recipient->full_name;
-
-            (new Txn)->new(
-                $amount,
-                $charge,
-                $finalAmount,
-                'Wallet Transfer',
-                $description,
-                TxnType::Transfer,
-                TxnStatus::Success,
-                setting('site_currency', 'global'),
-                $finalAmount,
-                $sender->id,
-                $recipient->id,
-                'User',
-                [],
-                'none',
-                null,
-                null,
-                false,
-                null
-            );
-
-            $recipientDescription = 'Received from ' . $sender->full_name;
-
-            (new Txn)->new(
-                $amount,
-                $charge,
-                $finalAmount,
-                'Wallet Transfer',
-                $recipientDescription,
-                TxnType::Transfer,
-                TxnStatus::Success,
-                setting('site_currency', 'global'),
-                $finalAmount,
-                $recipient->id,
-                $sender->id,
-                'User',
-                [],
-                'none',
-                null,
-                null,
-                false,
-                null
-            );
-
-            DB::commit();
-
-            Log::info('SendMoneyService@sendMoney: Transaction committed successfully', [
-                'user_id' => $sender->id,
-                'recipient_id' => $recipient->id,
-                'amount' => $amount,
-            ]);
-
-            $this->sendTransferNotifications($sender, $recipient, $amount);
-
-            return [
-                'success' => true,
-                'message' => __('Transfer successful.'),
-                'transaction' => [
-                    'amount' => $amount,
-                    'recipient' => $recipient->full_name,
-                    'recipient_phone' => $recipient->phone,
-                ],
+                'recipient_phone' => $recipient->phone,
             ];
-        } catch (\Throwable $throwable) {
-            DB::rollBack();
 
-            Log::error('SendMoneyService@sendMoney: Transaction failed', [
-                'user_id' => $sender->id,
-                'recipient_id' => $recipient->id,
-                'amount' => $amount,
-                'error' => $throwable->getMessage(),
-                'trace' => $throwable->getTraceAsString(),
-            ]);
+            $senderTxn = (new Txn)->new(
+                $amount,
+                0,
+                $amount,
+                'Wallet Transfer',
+                'Transfer to '.$recipient->full_name,
+                TxnType::Transfer,
+                TxnStatus::Success,
+                $currency,
+                $amount,
+                $sender->id,
+                $recipient->id,
+                'User',
+                $meta,
+                $clientReference
+            );
 
-            throw $throwable;
+            (new Txn)->new(
+                $amount,
+                0,
+                $amount,
+                'Wallet Transfer',
+                'Received from '.$sender->full_name,
+                TxnType::Transfer,
+                TxnStatus::Success,
+                $currency,
+                $amount,
+                $recipient->id,
+                $sender->id,
+                'User',
+                array_merge($meta, ['sender_id' => $sender->id]),
+                'RECV:'.$clientReference
+            );
+
+            return $this->formatTransferResult($senderTxn, $recipient, false);
+        }, 3);
+
+        // Notification delivery must never turn a successfully committed money
+        // movement into an API failure.
+        if (! ($result['idempotent_replay'] ?? false)) {
+            try {
+                $this->sendTransferNotifications(
+                    User::findOrFail($senderId),
+                    User::findOrFail($recipientId),
+                    $amount
+                );
+            } catch (\Throwable $notificationError) {
+                Log::warning('Transfer committed but notification delivery failed.', [
+                    'sender_id' => $senderId,
+                    'recipient_id' => $recipientId,
+                    'error' => $notificationError->getMessage(),
+                ]);
+            }
         }
+
+        return $result;
+    }
+
+    private function validateFeatureAccess(User $sender): void
+    {
+        if (! (bool) setting('transfer_global_status', 'transfer', true)) {
+            throw ValidationException::withMessages(['transfer' => __('Transfers are temporarily disabled globally.')]);
+        }
+
+        if (! (bool) $sender->transfer_status) {
+            throw ValidationException::withMessages(['transfer' => __('Transfer is not enabled for your account.')]);
+        }
+
+        if ((bool) setting('transfer_require_kyc', 'transfer', false) && ! (bool) $sender->kyc) {
+            throw ValidationException::withMessages(['transfer' => __('KYC verification is required to send money.')]);
+        }
+    }
+
+    private function validateRecipient(User $sender, ?User $recipient): void
+    {
+        if (! $recipient) {
+            throw ValidationException::withMessages(['recipient_phone' => __('Recipient not found.')]);
+        }
+        if ((int) $recipient->status !== 1) {
+            throw ValidationException::withMessages(['recipient_phone' => __('Recipient account is not active.')]);
+        }
+        if ((int) $sender->id === (int) $recipient->id) {
+            throw ValidationException::withMessages(['recipient_phone' => __('You cannot send money to yourself.')]);
+        }
+    }
+
+    private function resolveRecipient(string $phone, ?int $recipientId = null): ?User
+    {
+        if ($recipientId) {
+            $recipient = User::find($recipientId);
+            if ($recipient && in_array($this->phoneDigits((string) $recipient->phone), array_map([$this, 'phoneDigits'], $this->phoneCandidates($phone)), true)) {
+                return $recipient;
+            }
+        }
+
+        $candidates = $this->phoneCandidates($phone);
+        if ($candidates === []) {
+            return null;
+        }
+
+        // Exact matching only. The old trailing LIKE lookup could resolve an
+        // ambiguous user and then fail the actual transfer validation.
+        return User::query()->whereIn('phone', $candidates)->first();
+    }
+
+    private function phoneCandidates(string $phone): array
+    {
+        $raw = trim($phone);
+        $digits = $this->phoneDigits($raw);
+        if ($digits === '') {
+            return [];
+        }
+
+        $candidates = [];
+        $add = static function (string $value) use (&$candidates): void {
+            $value = trim($value);
+            if ($value !== '' && ! in_array($value, $candidates, true)) {
+                $candidates[] = $value;
+            }
+        };
+
+        if (str_starts_with($raw, '+')) {
+            $add('+'.$digits);
+            $add($digits);
+        } elseif (str_starts_with($digits, '00')) {
+            $international = substr($digits, 2);
+            $add('+'.$international);
+            $add($international);
+        } else {
+            $add($raw);
+            $add($digits);
+        }
+
+        $sender = auth()->user();
+        $dialCode = $sender?->country ? (string) (getCountryData($sender->country, 'dial_code') ?? '') : '';
+        $dialDigits = $this->phoneDigits($dialCode);
+
+        if ($dialDigits !== '') {
+            $local = $digits;
+            if (str_starts_with($local, $dialDigits)) {
+                $local = substr($local, strlen($dialDigits));
+            }
+            $local = ltrim($local, '0');
+            if ($local !== '') {
+                $add('+'.$dialDigits.$local);
+                $add($dialDigits.$local);
+                $add('0'.$local);
+                $add($local);
+            }
+        }
+
+        return array_values($candidates);
+    }
+
+    private function phoneDigits(string $phone): string
+    {
+        return preg_replace('/\D+/', '', $phone) ?: '';
+    }
+
+    private function formatTransferResult(Transaction $transaction, User $recipient, bool $idempotent): array
+    {
+        return [
+            'success' => true,
+            'message' => __('Transfer successful.'),
+            'tnx' => $transaction->tnx,
+            'client_reference' => $transaction->approval_cause,
+            'idempotent_replay' => $idempotent,
+            'transaction' => [
+                'tnx' => $transaction->tnx,
+                'amount' => (float) $transaction->amount,
+                'recipient' => $recipient->full_name,
+                'recipient_id' => $recipient->id,
+                'recipient_phone' => $recipient->phone,
+                'status' => TxnStatus::Success->value,
+            ],
+        ];
     }
 
     private function sendTransferNotifications(User $sender, User $recipient, float $amount): void
     {
-        $senderShortcodes = [
-            '[[amount]]' => amountWithCurrency($amount),
-            '[[recipient]]' => $recipient->full_name,
-            '[[recipient_phone]]' => $recipient->phone,
-            '[[site_title]]' => setting('site_title', 'global'),
-        ];
-
         $this->sendNotify(
             $sender->email,
             'transfer_sent',
             'User',
-            $senderShortcodes,
+            [
+                '[[amount]]' => amountWithCurrency($amount),
+                '[[recipient]]' => $recipient->full_name,
+                '[[recipient_phone]]' => $recipient->phone,
+                '[[site_title]]' => setting('site_title', 'global'),
+            ],
             $sender->phone,
             $sender->id
         );
-
-        $recipientShortcodes = [
-            '[[amount]]' => amountWithCurrency($amount),
-            '[[sender]]' => $sender->full_name,
-            '[[sender_phone]]' => $sender->phone,
-            '[[site_title]]' => setting('site_title', 'global'),
-        ];
 
         $this->sendNotify(
             $recipient->email,
             'transfer_received',
             'User',
-            $recipientShortcodes,
+            [
+                '[[amount]]' => amountWithCurrency($amount),
+                '[[sender]]' => $sender->full_name,
+                '[[sender_phone]]' => $sender->phone,
+                '[[site_title]]' => setting('site_title', 'global'),
+            ],
             $recipient->phone,
             $recipient->id
         );

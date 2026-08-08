@@ -78,11 +78,11 @@ class WithdrawAccountController extends Controller
         return $this->successWithoutDataResponse(__('Withdraw account updated successfully'));
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         try {
             $service = app(WithdrawAccountService::class);
-            $service->delete($id);
+            $service->delete($id, $request->user()->id);
 
             return $this->successWithoutDataResponse(__('Withdraw account deleted successfully'));
         } catch (\Throwable $th) {

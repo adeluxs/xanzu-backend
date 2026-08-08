@@ -30,6 +30,52 @@
                                 <div class="alert alert-success">{{ session('success') }}</div>
                             @endif
 
+                            @if (!empty($availableTypes))
+                                <div class="site-card border mb-4">
+                                    <div class="site-card-header">
+                                        <h4 class="title">{{ __('Add Transfer Limit') }}</h4>
+                                    </div>
+                                    <div class="site-card-body">
+                                        <form action="{{ route('admin.transfer-limit.store') }}" method="post" class="row g-3 align-items-end">
+                                            @csrf
+                                            <div class="col-xl-3 col-md-6">
+                                                <label class="box-input-label">{{ __('Applies To') }}</label>
+                                                <select name="user_type" class="form-select" required>
+                                                    @foreach ($availableTypes as $type)
+                                                        <option value="{{ $type }}" @selected(old('user_type') === $type)>
+                                                            {{ $type === 'all' ? __('All Users') : __(ucfirst($type)) }}
+                                                        </option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                            <div class="col-xl-2 col-md-6">
+                                                <label class="box-input-label">{{ __('Minimum Amount') }}</label>
+                                                <input type="number" step="0.01" min="0" name="min_amount" class="form-control" value="{{ old('min_amount', 0) }}" required>
+                                            </div>
+                                            <div class="col-xl-2 col-md-6">
+                                                <label class="box-input-label">{{ __('Maximum Amount') }}</label>
+                                                <input type="number" step="0.01" min="0" name="max_amount" class="form-control" value="{{ old('max_amount', 0) }}">
+                                            </div>
+                                            <div class="col-xl-2 col-md-6">
+                                                <label class="box-input-label">{{ __('Daily Limit') }}</label>
+                                                <input type="number" step="0.01" min="0" name="daily_limit" class="form-control" value="{{ old('daily_limit', 0) }}">
+                                            </div>
+                                            <div class="col-xl-2 col-md-6">
+                                                <label class="box-input-label">{{ __('Monthly Limit') }}</label>
+                                                <input type="number" step="0.01" min="0" name="monthly_limit" class="form-control" value="{{ old('monthly_limit', 0) }}">
+                                            </div>
+                                            <input type="hidden" name="daily_transaction_count" value="0">
+                                            <input type="hidden" name="monthly_transaction_count" value="0">
+                                            <input type="hidden" name="status" value="1">
+                                            <div class="col-xl-1 col-md-6">
+                                                <button type="submit" class="site-btn-sm primary-btn w-100">{{ __('Add') }}</button>
+                                            </div>
+                                        </form>
+                                        <small class="text-muted d-block mt-2">{{ __('Use 0 for any unlimited amount. After creating a policy you can configure transaction-count limits below.') }}</small>
+                                    </div>
+                                </div>
+                            @endif
+
                             <div class="row">
                                 @forelse ($limits as $limit)
                                     <div class="col-xl-4 col-md-6 mb-4">

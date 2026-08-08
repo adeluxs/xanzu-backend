@@ -47,10 +47,24 @@
                         </div>
 
                         @foreach(json_decode($gateway->credentials) as $key => $value)
+                            @php
+                                $credentialKey = strtolower((string) $key);
+                                $isSecretCredential = str_contains($credentialKey, 'token')
+                                    || str_contains($credentialKey, 'secret')
+                                    || str_contains($credentialKey, 'password');
+                            @endphp
                             <div class="col-xl-12">
                                 <div class="site-input-groups mb-0">
-                                    <label class="box-input-label" for="">{{ ucwords(str_replace( '_', ' ', $key)) }} :</label>
-                                    <input type="text" name="credentials[{{ $key }}] " class="box-input" value="{{ $value }}"/>
+                                    <label class="box-input-label" for="credential-{{ $gateway->id }}-{{ $key }}">{{ ucwords(str_replace( '_', ' ', $key)) }} :</label>
+                                    <input
+                                        id="credential-{{ $gateway->id }}-{{ $key }}"
+                                        type="{{ $isSecretCredential ? 'password' : 'text' }}"
+                                        name="credentials[{{ $key }}]"
+                                        class="box-input"
+                                        value="{{ $isSecretCredential ? '' : $value }}"
+                                        placeholder="{{ $isSecretCredential && !empty($value) ? __('Configured — leave blank to keep current value') : '' }}"
+                                        autocomplete="{{ $isSecretCredential ? 'new-password' : 'off' }}"
+                                    />
                                 </div>
                             </div>
                         @endforeach

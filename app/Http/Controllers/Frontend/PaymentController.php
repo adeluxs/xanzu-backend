@@ -135,7 +135,7 @@ class PaymentController extends Controller
     public function edit($id)
     {
         $withdrawMethods = WithdrawMethod::all();
-        $withdrawAccount = WithdrawAccount::find(decrypt($id));
+        $withdrawAccount = WithdrawAccount::query()->where('user_id', auth()->id())->findOrFail(decrypt($id));
 
         return response()->json([
             'html' => view('frontend::payment.account.edit', compact('withdrawMethods', 'withdrawAccount'))->render(),
@@ -164,7 +164,7 @@ class PaymentController extends Controller
 
         $input = $request->all();
 
-        $withdrawAccount = WithdrawAccount::find(decrypt($id));
+        $withdrawAccount = WithdrawAccount::query()->where('user_id', auth()->id())->findOrFail(decrypt($id));
 
         $oldCredentials = json_decode($withdrawAccount->credentials, true);
 
@@ -195,7 +195,7 @@ class PaymentController extends Controller
 
     public function delete($id)
     {
-        WithdrawAccount::destroy(decrypt($id));
+        WithdrawAccount::query()->where('user_id', auth()->id())->whereKey(decrypt($id))->delete();
 
         notify()->success(__('Withdraw account deleted successfully!'), 'Success');
 
@@ -221,7 +221,7 @@ class PaymentController extends Controller
      */
     public function details($accountId, int $amount = 0)
     {
-        $withdrawAccount = WithdrawAccount::with('method')->find($accountId);
+        $withdrawAccount = WithdrawAccount::with('method')->where('user_id', auth()->id())->find($accountId);
 
         $credentials = json_decode($withdrawAccount?->credentials, true);
 
@@ -294,9 +294,9 @@ class PaymentController extends Controller
         }
 
         // daily limit
-        $todayTransaction = Transaction::whereIn('type', [TxnType::Withdraw, TxnType::WithdrawAuto])->whereDate('created_at', Date::today())->count();
+        $todayTransaction = Transaction::where('user_id', auth()->id())->whereIn('type', [TxnType::Withdraw, TxnType::WithdrawAuto])->whereNotIn('status', [TxnStatus::Failed->value, TxnStatus::Cancelled->value])->whereDate('created_at', Date::today())->count();
         $dayLimit = (float) Setting('withdraw_day_limit', 'fee');
-        if ($todayTransaction >= $dayLimit) {
+        if ($dayLimit > 0 && $todayTransaction >= $dayLimit) {
             notify()->error(__('Today Withdraw limit has been reached'), 'Error');
 
             return back();
@@ -310,7 +310,7 @@ class PaymentController extends Controller
 
         $totalWithdraw = Transaction::where('user_id', $user->id)->whereIn('type', [TxnType::Withdraw, TxnType::WithdrawAuto])->where('status', TxnStatus::Success)->sum('amount');
 
-        if ($planWithdrawLimit > 0 && $totalWithdraw > $planWithdrawLimit) {
+        if ($planWithdrawLimit > 0 && ($totalWithdraw + (float) $request->amount) > $planWithdrawLimit) {
             notify()->error(__('You have reached your withdraw limit!'), 'Error');
 
             return back();
@@ -319,10 +319,14 @@ class PaymentController extends Controller
         $input = $request->all();
         $amount = (float) $input['amount'];
 
-        $withdrawAccount = WithdrawAccount::find($input['withdraw_account']);
+        $withdrawAccount = WithdrawAccount::with('method.gateway')->where('user_id', $user->id)->find($input['withdraw_account']);
+        if (! $withdrawAccount || ! $withdrawAccount->method?->status) {
+            notify()->error(__('Withdraw account or method is unavailable'), 'Error');
+            return back();
+        }
         $withdrawMethod = $withdrawAccount->method;
 
-        if ($amount < $withdrawMethod->min_withdraw || $amount > $withdrawMethod->max_withdraw) {
+        if ($amount < $withdrawMethod->min_withdraw || ((float) $withdrawMethod->max_withdraw > 0 && $amount > $withdrawMethod->max_withdraw)) {
             $currencySymbol = setting('currency_symbol', 'global');
             $message = 'Please Withdraw the Amount within the range '.$currencySymbol.$withdrawMethod->min_withdraw.' to '.$currencySymbol.$withdrawMethod->max_withdraw;
             notify()->error($message, 'Error');
@@ -340,6 +344,11 @@ class PaymentController extends Controller
         }
 
         $user->decrement('balance', $totalAmount);
+
+        if ((float) $withdrawMethod->rate <= 0) {
+            notify()->error(__('The selected withdraw method has an invalid rate.'), 'Error');
+            return back();
+        }
 
         $payAmount = $amount * $withdrawMethod->rate;
 

@@ -9,7 +9,11 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::table('settings')->insert([
+        if (!Schema::hasTable('settings')) {
+            return;
+        }
+
+        $rows = [
             [
                 'name' => 'transfer_global_status',
                 'val' => '1',
@@ -38,11 +42,22 @@ return new class extends Migration
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
-        ]);
+        ];
+
+        foreach ($rows as $row) {
+            DB::table('settings')->updateOrInsert(
+                ['name' => $row['name']],
+                $row
+            );
+        }
     }
 
     public function down(): void
     {
+        if (!Schema::hasTable('settings')) {
+            return;
+        }
+
         DB::table('settings')->whereIn('name', [
             'transfer_global_status',
             'transfer_default_buyer',

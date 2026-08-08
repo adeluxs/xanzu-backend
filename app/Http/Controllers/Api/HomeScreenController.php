@@ -43,112 +43,82 @@ class HomeScreenController extends Controller
      */
     public function index(): JsonResponse
     {
-        // Shared eager-load for product queries
-        $productEagerLoad = [
-            'category:id,name,slug',
-            'brand:id,name,slug,image',
-            'listingAttributes',
-        ];
+        // Home data is identical for every visitor for a short window. Cache
+        // the Eloquent collections (not the final HTTP response) so Resource
+        // serialization remains request-aware while eliminating the repeated
+        // query burst that made the mobile home screen feel slow.
+        $payload = Cache::remember('api.home-screen.v3', now()->addSeconds(45), function (): array {
+            $productEagerLoad = [
+                'category:id,name,slug',
+                'brand:id,name,slug,image',
+                'listingAttributes',
+            ];
 
-        // 1. Home coupon (single)
-        $homeCoupon = Coupon::where('status', 1)
-            ->where('expires_at', '>=', now())
-            ->where('is_home', 1)
-            ->first();
-
-        // 2. Banners
-        $banners = Banner::query()
-            ->with('category:id,name,slug,image,description')
-            ->latest()
-            ->get();
-
-        // 3. Trending categories – parent only (parent_id IS NULL)
-        $trendingCategories = Category::active()
-            ->trending()
-            ->isCategory()
-            ->orderBy('order')
-            ->get();
-
-        // 4. Popular brands
-        $popularBrands = Brand::where('status', 1)
-            ->isPopular()
-            ->get();
-
-        // 5. Flash-sale products (active, approved, is_flash = true)
-        $flashSaleProducts = Listing::where('status', 'active')
-            ->where('is_approved', 1)
-            ->where('is_flash', true)
-            ->with($productEagerLoad)
-            ->latest()
-            ->take(6)
-            ->get();
-
-        // Best Selling products (active, approved, ordered by sold_count)
-
-        $bestSellingProducts =
-            Listing::where('status', 'active')
-                ->where('is_approved', 1)
-                ->orderByDesc('sold_count')
-                ->orderByDesc('avg_rating')
-                ->with($productEagerLoad)
-                ->latest()
-                ->take(6)
-                ->get()
-        ;
-
-        // Trending products
-        $trendingProducts =
-            Listing::where('status', 'active')
-                ->where('is_approved', 1)
-                ->orderByDesc('is_trending')
-                ->with($productEagerLoad)
-                ->latest()
-                ->take(6)
-                ->get()
-        ;
-
-        // Latest products (active, approved, ordered by created_at)
-
-        $latestProducts =
-            Listing::where('status', 'active')
-                ->where('is_approved', 1)
-                ->orderByDesc('created_at')
-                ->with($productEagerLoad)
-                ->latest()
-                ->take(6)
-                ->get()
-        ;
-
-        $providers = Provider::where('status', 1)
-            ->latest()
-            ->take(20)
-            ->get();
-
-
-
-        // 5. Flash-sale meta from settings
-        $flashSaleStatus = setting('flash_sale_status');
-        $flashSaleMeta = [
-            'flash_sale_status' => $flashSaleStatus,
-            'flash_sale_start_date' => setting('flash_sale_start_date'),
-            'flash_sale_end_date' => setting('flash_sale_end_date'),
-
-        ];
+            return [
+                'coupon' => Coupon::where('status', 1)
+                    ->where('expires_at', '>=', now())
+                    ->where('is_home', 1)
+                    ->first(),
+                'banners' => Banner::query()
+                    ->with('category:id,name,slug,image,description')
+                    ->latest()
+                    ->get(),
+                'trending_categories' => Category::active()
+                    ->trending()
+                    ->isCategory()
+                    ->orderBy('order')
+                    ->get(),
+                'popular_brands' => Brand::where('status', 1)->isPopular()->get(),
+                'flash_sale_products' => Listing::where('status', 'active')
+                    ->where('is_approved', 1)
+                    ->where('is_flash', true)
+                    ->with($productEagerLoad)
+                    ->latest()
+                    ->take(6)
+                    ->get(),
+                'best_selling_products' => Listing::where('status', 'active')
+                    ->where('is_approved', 1)
+                    ->orderByDesc('sold_count')
+                    ->orderByDesc('avg_rating')
+                    ->with($productEagerLoad)
+                    ->take(6)
+                    ->get(),
+                'trending_products' => Listing::where('status', 'active')
+                    ->where('is_approved', 1)
+                    ->orderByDesc('is_trending')
+                    ->latest()
+                    ->with($productEagerLoad)
+                    ->take(6)
+                    ->get(),
+                'latest_products' => Listing::where('status', 'active')
+                    ->where('is_approved', 1)
+                    ->with($productEagerLoad)
+                    ->latest()
+                    ->take(6)
+                    ->get(),
+                'providers' => Provider::where('status', 1)->latest()->take(20)->get(),
+                'flash_sale_meta' => [
+                    'flash_sale_status' => setting('flash_sale_status'),
+                    'flash_sale_start_date' => setting('flash_sale_start_date'),
+                    'flash_sale_end_date' => setting('flash_sale_end_date'),
+                ],
+            ];
+        });
 
         return $this->successResponse(
             data: [
-                'banners' => BannerResource::collection($banners),
-                'coupon' => $homeCoupon ? new CouponResource($homeCoupon) : null,
-                'trending_categories' => CategoryResource::collection($trendingCategories),
-                'popular_brands' => BrandResource::collection($popularBrands),
+                'banners' => BannerResource::collection($payload['banners']),
+                'coupon' => $payload['coupon'] ? new CouponResource($payload['coupon']) : null,
+                'trending_categories' => CategoryResource::collection($payload['trending_categories']),
+                'popular_brands' => BrandResource::collection($payload['popular_brands']),
                 'products' => [
-                    'flash_sale_products' => ListingResource::withDetails($flashSaleProducts),
-                    'trending_products' => ListingResource::withDetails($trendingProducts),
-                    'best_selling_products' => ListingResource::withDetails($bestSellingProducts),
-                    'latest_products' => ListingResource::withDetails($latestProducts),
+                    'flash_sale_products' => ListingResource::withDetails($payload['flash_sale_products']),
+                    'trending_products' => ListingResource::withDetails($payload['trending_products']),
+                    'best_selling_products' => ListingResource::withDetails($payload['best_selling_products']),
+                    'latest_products' => ListingResource::withDetails($payload['latest_products']),
                 ],
-                'providers' => ProviderResource::collection($providers),
-                'flash_sale_meta' => $flashSaleMeta,
+                'providers' => ProviderResource::collection($payload['providers']),
+                'flash_sale_meta' => $payload['flash_sale_meta'],
             ],
             message: 'Home screen data fetched successfully',
         );

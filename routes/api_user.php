@@ -66,10 +66,15 @@ Route::post('card-applications', [CardApplicationController::class, 'store']);
 Route::get('cards', [CardApplicationController::class, 'cards']);
 
 // // Add Money
-Route::controller(AddMoneyController::class)->prefix('add-money')->middleware('check_feature:buyer_deposit,kyc_buyer_deposit')->group(function () {
+Route::controller(AddMoneyController::class)->prefix('add-money')->group(function () {
+    // Existing transactions remain visible/verifiable even if deposits are
+    // later disabled or the user's KYC state changes.
     Route::get('history', 'addMoneyHistory')->name('addMoney.history');
-    Route::get('/', 'index')->name('addMoney');
-    Route::post('/', 'store')->name('addMoney.now');
+    Route::get('{tnx}/status', 'status')->name('addMoney.status');
+
+    // Only starting a new top-up is gated by the current deposit policy.
+    Route::get('/', 'index')->middleware('check_feature:buyer_deposit,kyc_buyer_deposit')->name('addMoney');
+    Route::post('/', 'store')->middleware('check_feature:buyer_deposit,kyc_buyer_deposit')->name('addMoney.now');
 });
 
 // Orders

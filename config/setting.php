@@ -266,6 +266,43 @@ return [
             ],
         ],
     ],
+    'transfer' => [
+        'title' => 'Transfer Settings',
+        'elements' => [
+            [
+                'type' => 'checkbox',
+                'data' => 'boolean',
+                'name' => 'transfer_global_status',
+                'label' => 'Global Transfer Status',
+                'rules' => 'required|boolean',
+                'value' => 1,
+            ],
+            [
+                'type' => 'checkbox',
+                'data' => 'boolean',
+                'name' => 'transfer_default_buyer',
+                'label' => 'Default Buyer Transfer Status',
+                'rules' => 'required|boolean',
+                'value' => 1,
+            ],
+            [
+                'type' => 'checkbox',
+                'data' => 'boolean',
+                'name' => 'transfer_default_merchant',
+                'label' => 'Default Merchant Transfer Status',
+                'rules' => 'required|boolean',
+                'value' => 1,
+            ],
+            [
+                'type' => 'checkbox',
+                'data' => 'boolean',
+                'name' => 'transfer_require_kyc',
+                'label' => 'Require KYC for Transfers',
+                'rules' => 'required|boolean',
+                'value' => 0,
+            ],
+        ],
+    ],
     'permission' => [
         'title' => 'Permission Settings',
         'elements' => [

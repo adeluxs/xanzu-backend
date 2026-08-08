@@ -29,6 +29,13 @@ class UserController extends Controller
         return back();
     }
 
+    public function notifyUser()
+    {
+        // Legacy route compatibility: keep the historical /notify endpoint
+        // functional by taking the user to their own notification list.
+        return $this->allNotification();
+    }
+
     public function latestNotification()
     {
         $notifications = Notification::where('for', 'user')->where('user_id', auth()->user()->id)->latest()->take(10)->get();
@@ -55,7 +62,10 @@ class UserController extends Controller
             return back();
         }
 
-        $notification = Notification::find($id);
+        $notification = Notification::query()
+            ->where('for', 'user')
+            ->where('user_id', auth()->id())
+            ->findOrFail($id);
         if ($notification->read == 0) {
             $notification->read = 1;
             $notification->save();

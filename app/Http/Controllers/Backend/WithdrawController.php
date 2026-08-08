@@ -78,19 +78,19 @@ class WithdrawController extends Controller
         $input = $request->all();
 
         $validator = Validator::make($input, [
-            'icon' => ['required_if:type,==,manual'],
-            'gateway_id' => ['required_if:type,==,auto'],
+            'icon' => ['required_if:type,manual'],
+            'gateway_id' => ['required_if:type,auto'],
             'name' => ['required'],
             'currency' => ['required'],
-            'required_time' => ['required_if:type,==,manual'],
-            'required_time_format' => ['required_if:type,==,manual'],
+            'required_time' => ['required_if:type,manual'],
+            'required_time_format' => ['required_if:type,manual'],
             'charge' => ['required'],
             'charge_type' => ['required'],
             'rate' => ['required'],
             'min_withdraw' => ['required'],
             'max_withdraw' => ['required'],
             'status' => ['required'],
-            'fields' => ['required_if:type,==,manual'],
+            'fields' => ['required_if:type,manual'],
         ]);
 
         if ($validator->fails()) {
@@ -103,7 +103,18 @@ class WithdrawController extends Controller
         if ($input['type'] == 'auto') {
 
             $withdrawGateways = Gateway::find($input['gateway_id']);
-            $withdrawFields = explode(',', $withdrawGateways->is_withdraw);
+            if (! $withdrawGateways) {
+                notify()->error(__('Automatic withdrawal gateway not found.'), 'Error');
+                return back()->withInput();
+            }
+            if ($withdrawGateways->gateway_code === 'rayplusmoney' && strtoupper((string) $input['currency']) !== 'XOF') {
+                notify()->error(__('RayPlusMoney withdrawal methods must use XOF.'), 'Error');
+                return back()->withInput();
+            }
+
+            $withdrawFields = $withdrawGateways->gateway_code === 'rayplusmoney'
+                ? ['network', 'customer']
+                : array_values(array_filter(array_map('trim', explode(',', (string) $withdrawGateways->is_withdraw))));
 
             $fields = array_map(function ($field) {
                 return [
@@ -151,8 +162,8 @@ class WithdrawController extends Controller
             'route' => route('admin.withdraw.method.list', $type),
         ];
 
-        $withdrawMethod = WithdrawMethod::find(\request('id'));
-        $supported_currencies = Gateway::find($withdrawMethod->gateway_id)->supported_currencies ?? [];
+        $withdrawMethod = WithdrawMethod::findOrFail(\request('id'));
+        $supported_currencies = $withdrawMethod->gateway?->supported_currencies ?? [];
 
         return view('backend.withdraw.method_edit', compact('button', 'withdrawMethod', 'type', 'supported_currencies'));
     }
@@ -167,15 +178,15 @@ class WithdrawController extends Controller
         $validator = Validator::make($input, [
             'name' => ['required'],
             'currency' => ['required'],
-            'required_time' => ['required_if:type,==,manual'],
-            'required_time_format' => ['required_if:type,==,manual'],
+            'required_time' => ['required_if:type,manual'],
+            'required_time_format' => ['required_if:type,manual'],
             'charge' => ['required'],
             'charge_type' => ['required'],
             'rate' => ['required'],
             'min_withdraw' => ['required'],
             'max_withdraw' => ['required'],
             'status' => ['required'],
-            'fields' => ['required_if:type,==,manual'],
+            'fields' => ['required_if:type,manual'],
         ]);
 
         if ($validator->fails()) {

@@ -58,10 +58,21 @@ class GatewayController extends Controller
             }
         }
 
+        $existingCredentials = json_decode((string) $gateway->credentials, true) ?: [];
+        $submittedCredentials = (array) ($input['credentials'] ?? []);
+        foreach ($submittedCredentials as $key => $value) {
+            $isSecret = str_contains(strtolower((string) $key), 'token')
+                || str_contains(strtolower((string) $key), 'secret')
+                || str_contains(strtolower((string) $key), 'password');
+            if ($isSecret && trim((string) $value) === '' && array_key_exists($key, $existingCredentials)) {
+                $submittedCredentials[$key] = $existingCredentials[$key];
+            }
+        }
+
         $data = [
             'name' => $input['name'],
             'status' => $input['status'],
-            'credentials' => json_encode($input['credentials']),
+            'credentials' => json_encode(array_merge($existingCredentials, $submittedCredentials)),
         ];
 
         if ($request->hasFile('logo')) {

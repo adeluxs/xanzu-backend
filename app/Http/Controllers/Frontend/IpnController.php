@@ -11,6 +11,7 @@ use App\Models\Order;
 use App\Models\Transaction;
 use App\Services\CardProvider\Stripe\IpnService;
 use App\Services\OrderService;
+use App\Services\Payments\RayplusmoneyService;
 use App\Traits\Payment;
 use BTCPayServer\Client\Webhook;
 use Cryptomus\Api\Client;
@@ -333,73 +334,35 @@ class IpnController extends Controller
 
     public function rayplusmoneyIpn(Request $request)
     {
-        $gatewayInfo = gateway_info('rayplusmoney');
-        $baseUrl = rtrim((string) ($gatewayInfo->base_url ?? 'https://app.rayplusmoney.com/pay/v01'), '/');
-        $apiKey = (string) ($gatewayInfo->api_key ?? '');
-        $apiToken = (string) ($gatewayInfo->api_token ?? '');
+        $service = app(RayplusmoneyService::class);
+        $transaction = $service->findCallbackTransaction(
+            $request->all(),
+            $request->query('reftrn')
+        );
 
-        $callback = $request->all();
-        $token = (string) ($callback['token'] ?? $callback['customdata']['transaction_id'] ?? '');
-
-        if ($token === '') {
-            return response()->json(['status' => false, 'message' => 'Invalid callback']);
+        if (! $transaction) {
+            return response()->json(['status' => false, 'message' => 'Transaction not found'], 404);
         }
 
-        $transaction = Transaction::where('approval_cause', $token)->orWhere('tnx', $token)->first();
+        try {
+            $result = $service->reconcile($transaction);
 
-        if (!$transaction) {
-            return response()->json(['status' => false, 'message' => 'Transaction not found']);
-        }
-
-        $isWithdraw = in_array($transaction->type, [TxnType::Withdraw, TxnType::WithdrawAuto]);
-
-        if ($isWithdraw) {
-            $verifyResponse = Http::withHeaders([
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . $apiToken,
-                'Apikey' => $apiKey,
-            ])->get($baseUrl . '/pay/v01/withdrawal/confirm', [
-                'withdrawalToken' => $token,
+            return response()->json([
+                'status' => true,
+                'message' => ($result['completed'] ?? false)
+                    ? 'Transaction completed'
+                    : (($result['failed'] ?? false) ? 'Transaction failed' : 'Transaction pending'),
+                'data' => $result,
             ]);
-        } else {
-            $verifyResponse = Http::withHeaders([
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . $apiToken,
-                'Apikey' => $apiKey,
-            ])->get($baseUrl . '/pay/v01/redirect/checkout-invoice/confirm', [
-                'invoiceToken' => $token,
+        } catch (\Throwable $e) {
+            \Log::error('RayPlusMoney callback reconciliation failed.', [
+                'tnx' => $transaction->tnx,
+                'error' => $e->getMessage(),
             ]);
+
+            // Return a non-2xx response so the provider can retry the callback.
+            return response()->json(['status' => false, 'message' => 'Verification failed'], 503);
         }
-
-        $verifyData = $verifyResponse->json();
-
-        if (isset($verifyData['response_code']) && $verifyData['response_code'] === '00') {
-            $status = strtolower((string) ($verifyData['status'] ?? ''));
-
-            if ($status === 'completed') {
-                if ($transaction->status == TxnStatus::Pending) {
-                    (new Txn)->update($transaction->tnx, TxnStatus::Success, $transaction->user_id);
-
-                    return response()->json(['status' => true, 'message' => $isWithdraw ? 'Withdrawal successful' : 'Payment successful']);
-                }
-            }
-
-            if ($status === 'notcompleted') {
-                if ($transaction->status == TxnStatus::Pending) {
-                    if ($isWithdraw) {
-                        $user = $transaction->user;
-                        if ($user) {
-                            $user->increment('balance', $transaction->final_amount);
-                        }
-                    }
-
-                    $transaction->update(['status' => TxnStatus::Failed]);
-
-                    return response()->json(['status' => true, 'message' => $isWithdraw ? 'Withdrawal failed' : 'Payment failed']);
-                }
-            }
-        }
-
-        return response()->json(['status' => false, 'message' => 'Pending or invalid status']);
     }
+
 }

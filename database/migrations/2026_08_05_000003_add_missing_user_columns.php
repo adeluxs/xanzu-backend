@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (!Schema::hasTable('users')) {
+            return;
+        }
+
         Schema::table('users', function (Blueprint $table) {
             if (!Schema::hasColumn('users', 'transfer_status')) {
                 $table->boolean('transfer_status')->default(1)->after('withdraw_status');
@@ -20,6 +24,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (!Schema::hasTable('users')) {
+            return;
+        }
+
         Schema::table('users', function (Blueprint $table) {
             if (Schema::hasColumn('users', 'transfer_status')) {
                 $table->dropColumn('transfer_status');

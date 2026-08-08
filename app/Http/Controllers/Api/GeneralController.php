@@ -43,9 +43,7 @@ class GeneralController extends Controller
     public function getSettings(Request $request)
     {
         $type = $request->input('key', 'all');
-        $settings = Setting::select('name', 'val')
-
-            ->whereIn('name', [
+        $allowedSettingNames = [
                 // Branding
                 'site_title',
                 'site_logo',
@@ -95,9 +93,18 @@ class GeneralController extends Controller
                 // Support
                 'support_email',
                 'site_favicon',
-            ])
 
-            ->get()->map(function ($setting) {
+                // Wallet transfer feature flag (limits are exposed only from
+                // the authenticated transfer-config endpoint).
+                'transfer_global_status',
+            ];
+
+        // Settings are already cached centrally by the Setting model. Reusing
+        // that cache removes a database hit on every mobile bootstrap request.
+        $settings = collect(Setting::getAllSettings())
+            ->whereIn('name', $allowedSettingNames)
+            ->values()
+            ->map(function ($setting) {
                 return [
                     'name' => $setting->name,
                     'value' => file_exists(base_path('assets/' . $setting->val)) ? asset($setting->val) : $setting->val,

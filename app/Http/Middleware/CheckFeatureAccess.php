@@ -18,7 +18,8 @@ class CheckFeatureAccess
      */
     public function handle(Request $request, Closure $next, string $permissionKey, string $kycKey): Response
     {
-        $kycKey = $request->kycKey ?? $kycKey; // kyc_purchase
+        // The route owns the feature/KYC policy. Never let a client select a
+        // different settings key through a request parameter.
         if (!setting($permissionKey, 'permission')) {
             notify()->error(__('This feature is currently unavailable'));
             return $request->expectsJson() ? $this->errorResponse(__('This feature is currently unavailable')) : $this->redirectTo();

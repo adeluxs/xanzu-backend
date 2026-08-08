@@ -25,7 +25,7 @@ class SettingController extends Controller
     public function __construct()
     {
         $this->middleware('permission:site-setting|email-setting', ['only' => ['update']]);
-        $this->middleware('permission:site-setting', ['only' => ['siteSetting', 'seoMeta']]);
+        $this->middleware('permission:site-setting', ['only' => ['siteSetting', 'seoMeta', 'transferSetting']]);
         $this->middleware('permission:email-setting', ['only' => ['mailSetting']]);
     }
 

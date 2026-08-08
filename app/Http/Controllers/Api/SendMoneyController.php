@@ -32,20 +32,7 @@ class SendMoneyController extends Controller
                 return $this->unauthorizedResponse('Unauthorized');
             }
 
-            $userBalance = $user->balance;
-            $isMerchant = $user->user_type === 'merchant';
-
-            $responseData = [
-                'user_balance' => $userBalance,
-                'transfer_status' => $isMerchant ? 1 : $user->transfer_status,
-            ];
-
-            Log::info('SendMoneyController@config: Success', [
-                'user_id' => $user->id,
-                'user_type' => $user->user_type,
-                'balance' => $userBalance,
-                'transfer_status' => $responseData['transfer_status'],
-            ]);
+            $responseData = $this->sendMoneyService->transferConfig($user);
 
             return $this->successResponse($responseData);
         } catch (\Throwable $th) {
@@ -65,21 +52,13 @@ class SendMoneyController extends Controller
             $user = auth()->user();
             $isMerchant = $user?->user_type === 'merchant';
 
-            Log::info('SendMoneyController@validateTransferRequest: Request received', [
-                'user_id' => $user?->id,
-                'user_type' => $user?->user_type,
-                'recipient_phone' => $data['recipient_phone'] ?? null,
-                'amount' => $data['amount'] ?? null,
-            ]);
+            $validation = $this->sendMoneyService->validate($data, $isMerchant);
 
-            $this->sendMoneyService->validate($data, $isMerchant);
-
-            Log::info('SendMoneyController@validateTransferRequest: Validation passed', [
-                'user_id' => $user?->id,
-                'recipient_phone' => $data['recipient_phone'] ?? null,
-            ]);
-
-            return $this->successWithoutDataResponse('Validation passed.');
+            return $this->successResponse([
+                'recipient_id' => $validation['recipient']->id,
+                'recipient_phone' => $validation['recipient_phone'],
+                'amount' => $validation['amount'],
+            ], 'Validation passed.');
         } catch (ValidationException $e) {
             $fieldErrors = $this->formatFieldErrors($e);
 
@@ -112,11 +91,6 @@ class SendMoneyController extends Controller
             $phone = $request->input('phone');
             $user = auth()->user();
 
-            Log::info('SendMoneyController@lookupRecipient: Request received', [
-                'user_id' => $user?->id,
-                'lookup_phone' => $phone,
-            ]);
-
             $request->validate([
                 'phone' => 'required|string',
             ]);
@@ -124,10 +98,6 @@ class SendMoneyController extends Controller
             $result = $this->sendMoneyService->lookupRecipient($phone);
 
             if (!$result) {
-                Log::info('SendMoneyController@lookupRecipient: Recipient not found', [
-                    'user_id' => $user?->id,
-                    'lookup_phone' => $phone,
-                ]);
 
                 return $this->structuredErrorResponse(
                     message: 'Recipient not found.',
@@ -135,13 +105,6 @@ class SendMoneyController extends Controller
                     statusCode: 200
                 );
             }
-
-            Log::info('SendMoneyController@lookupRecipient: Recipient found', [
-                'user_id' => $user?->id,
-                'lookup_phone' => $phone,
-                'recipient_id' => $result['id'] ?? null,
-                'recipient_name' => $result['full_name'] ?? null,
-            ]);
 
             return $this->successResponse($result);
         } catch (\Throwable $th) {
@@ -163,21 +126,7 @@ class SendMoneyController extends Controller
             $user = auth()->user();
             $isMerchant = $user?->user_type === 'merchant';
 
-            Log::info('SendMoneyController@store: Request received', [
-                'user_id' => $user?->id,
-                'user_type' => $user?->user_type,
-                'recipient_phone' => $data['recipient_phone'] ?? null,
-                'amount' => $data['amount'] ?? null,
-            ]);
-
             $sendMoney = $this->sendMoneyService->sendMoney($data, $isMerchant);
-
-            Log::info('SendMoneyController@store: Success', [
-                'user_id' => $user?->id,
-                'transaction_tnx' => $sendMoney['tnx'] ?? null,
-                'recipient_phone' => $data['recipient_phone'] ?? null,
-                'amount' => $data['amount'] ?? null,
-            ]);
 
             return $this->successResponse($sendMoney, 'Send money request has been placed successfully.');
         } catch (ValidationException $e) {
@@ -217,7 +166,7 @@ class SendMoneyController extends Controller
         }
 
         foreach ($e->errors()->getMessages() as $field => $messages) {
-            $fieldErrors[$field] = $messages[0] ?? $messages[0];
+            $fieldErrors[$field] = $messages[0] ?? 'Validation failed.';
         }
 
         $fieldErrors['general'] = !empty($generalErrors)
@@ -243,7 +192,7 @@ class SendMoneyController extends Controller
             if (str_contains($message, 'kyc')) {
                 return 'TRANSFER_KYC_REQUIRED';
             }
-            if (str_contains($message, 'limit of')) {
+            if (str_contains($message, 'limit of') || str_contains($message, 'limit') || str_contains($message, 'reference')) {
                 return 'LIMIT_EXCEEDED';
             }
             return 'TRANSFER_DISABLED';
@@ -270,7 +219,7 @@ class SendMoneyController extends Controller
             if (str_contains($message, 'limit')) {
                 return 'LIMIT_EXCEEDED';
             }
-            if (str_contains($message, 'min') || str_contains($message, 'numeric')) {
+            if (str_contains($message, 'minimum') || str_contains($message, 'maximum') || str_contains($message, 'min') || str_contains($message, 'max') || str_contains($message, 'numeric')) {
                 return 'INVALID_AMOUNT';
             }
         }

@@ -88,6 +88,7 @@ class RegisterController extends Controller
                 'username' => $username,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
+                'transfer_status' => (bool) setting('transfer_default_buyer', 'transfer', true),
                 'country' => $countryName,
                 'phone' => $phone,
                 'phone_verified_at' => $phoneOtp ? $phoneOtp->updated_at : now(),

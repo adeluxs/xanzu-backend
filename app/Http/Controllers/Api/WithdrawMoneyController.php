@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\WithdrawService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class WithdrawMoneyController extends Controller
 {
@@ -23,11 +24,26 @@ class WithdrawMoneyController extends Controller
                 'amount',
             ]));
 
-            $txnInfo = $service->withdrawMoney($withdrawAccount, $amount);
+            $result = $service->withdrawMoney($withdrawAccount, (float) $amount);
+            $transaction = $result['transaction'];
 
-            return $this->successWithoutDataResponse(__('Withdraw request submitted successfully'));
+            return $this->successResponse([
+                'transaction' => [
+                    'tnx' => $transaction->tnx,
+                    'status' => $transaction->status?->value ?? (string) $transaction->status,
+                    'amount' => (float) $transaction->amount,
+                    'charge' => (float) $transaction->charge,
+                    'final_amount' => (float) $transaction->final_amount,
+                    'pay_amount' => (float) $transaction->pay_amount,
+                    'pay_currency' => $transaction->pay_currency,
+                ],
+                'gateway' => $result['gateway'],
+            ], __('Withdraw request submitted successfully'));
+        } catch (ValidationException $th) {
+            return $this->validationErrorResponse($th->errors());
         } catch (\Throwable $th) {
-            return $this->validationErrorResponse($th->getMessage());
+            report($th);
+            return $this->errorResponse(__('Sorry! Something went wrong. Please try again.'), 500);
         }
     }
 }

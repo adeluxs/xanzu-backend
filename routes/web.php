@@ -6,6 +6,7 @@ use App\Http\Controllers\Frontend\BnplCheckoutController;
 use App\Http\Controllers\Frontend\HomeController;
 use App\Http\Controllers\Frontend\IpnController;
 use App\Http\Controllers\Frontend\PageController;
+use App\Http\Controllers\Frontend\RayplusmoneyController;
 use App\Http\Controllers\Frontend\StatusController;
 use Illuminate\Support\Facades\Route;
 
@@ -27,6 +28,15 @@ Route::withoutMiddleware(['auth'])->controller(StatusController::class)->prefix(
     Route::match(['get', 'post'], '/cancel', 'cancel')->name('cancel');
     Route::match(['get', 'post'], '/pending', 'pending')->name('pending');
 });
+
+// RayPlusMoney hosted checkout return routes. These endpoints never trust the
+// browser redirect itself; they verify the provider token before changing a
+// wallet balance.
+Route::withoutMiddleware(['auth'])->controller(RayplusmoneyController::class)
+    ->prefix('status/rayplusmoney')->name('status.rayplusmoney.')->group(function () {
+        Route::match(['get', 'post'], 'success', 'success')->name('success');
+        Route::match(['get', 'post'], 'cancel', 'cancel')->name('cancel');
+    });
 
 // Instant payment notification
 Route::group(['prefix' => 'ipn', 'as' => 'ipn.', 'controller' => IpnController::class], function () {

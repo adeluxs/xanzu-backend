@@ -63,29 +63,42 @@ class DepositController extends Controller
         $input = $request->all();
 
         $validator = Validator::make($input, [
-            'logo' => ['required_if:type,==,manual'],
+            'logo' => ['required_if:type,manual', 'nullable', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048'],
             'name' => ['required'],
-            'gateway_id' => ['required_if:type,==,auto'],
-            'method_code' => ['required_if:type,==,manual'],
-            'currency' => ['required'],
-            'currency_symbol' => ['required'],
-            'charge' => ['required'],
-            'charge_type' => ['required'],
-            'rate' => ['required'],
-            'minimum_deposit' => ['required'],
-            'maximum_deposit' => ['required'],
-            'status' => ['required'],
-            'field_options' => ['required_if:type,==,manual'],
+            'gateway_id' => ['required_if:type,auto', 'nullable', 'integer', 'exists:gateways,id'],
+            'method_code' => ['required_if:type,manual', 'nullable', 'string', 'max:100'],
+            'currency' => ['required', 'string', 'size:3'],
+            'currency_symbol' => ['required', 'string', 'max:10'],
+            'charge' => ['required', 'numeric', 'min:0'],
+            'charge_type' => ['required', 'in:percentage,fixed'],
+            'rate' => ['required', 'numeric', 'gt:0'],
+            'minimum_deposit' => ['required', 'numeric', 'min:0'],
+            'maximum_deposit' => ['required', 'numeric', 'min:0'],
+            'status' => ['required', 'boolean'],
+            'field_options' => ['required_if:type,manual'],
         ]);
 
         if ($validator->fails()) {
             notify()->error($validator->errors()->first(), 'Error');
 
-            return back();
+            return back()->withInput();
+        }
+
+        $minimumDeposit = (float) $input['minimum_deposit'];
+        $maximumDeposit = (float) $input['maximum_deposit'];
+        if ($maximumDeposit > 0 && $maximumDeposit < $minimumDeposit) {
+            notify()->error(__('Maximum top-up must be zero (unlimited) or greater than/equal to the minimum top-up.'), 'Error');
+
+            return back()->withInput();
         }
 
         if (isset($input['gateway_id'])) {
-            $gateway = Gateway::find($input['gateway_id']);
+            $gateway = Gateway::findOrFail($input['gateway_id']);
+            if ($gateway->gateway_code === 'rayplusmoney' && strtoupper(trim($input['currency'])) !== 'XOF') {
+                notify()->error(__('RayPlusMoney deposit methods must use XOF as the gateway currency.'), 'Error');
+
+                return back()->withInput();
+            }
             $methodCode = $gateway->gateway_code.'-'.strtolower($input['currency']);
         }
 
@@ -95,13 +108,13 @@ class DepositController extends Controller
             'type' => $input['type'],
             'gateway_id' => $input['gateway_id'] ?? null,
             'gateway_code' => $input['method_code'] ?? $methodCode,
-            'currency' => $input['currency'],
+            'currency' => strtoupper(trim($input['currency'])),
             'currency_symbol' => $input['currency_symbol'],
             'charge' => $input['charge'],
             'charge_type' => $input['charge_type'],
-            'rate' => $input['rate'],
-            'minimum_deposit' => $input['minimum_deposit'],
-            'maximum_deposit' => $input['maximum_deposit'],
+            'rate' => (float) $input['rate'],
+            'minimum_deposit' => (float) $input['minimum_deposit'],
+            'maximum_deposit' => (float) $input['maximum_deposit'],
             'status' => $input['status'],
             'field_options' => $input['field_options'] ?? null,
             'payment_details' => isset($input['payment_details']) ? Purifier::clean(htmlspecialchars_decode($input['payment_details'])) : null,
@@ -116,8 +129,8 @@ class DepositController extends Controller
     public function methodEdit($type)
     {
         $gateways = Gateway::where('status', true)->get();
-        $method = DepositMethod::find(\request('id'));
-        $supported_currencies = Gateway::find($method->gateway_id)->supported_currencies ?? [];
+        $method = DepositMethod::findOrFail(\request('id'));
+        $supported_currencies = Gateway::find($method?->gateway_id)?->supported_currencies ?? [];
 
         return view('backend.deposit.edit_method', compact('method', 'type', 'gateways', 'supported_currencies'));
     }
@@ -127,28 +140,42 @@ class DepositController extends Controller
         $input = $request->all();
         $validator = Validator::make($input, [
             'name' => ['required'],
-            'gateway_id' => ['required_if:type,==,auto'],
-            'currency' => ['required'],
-            'currency_symbol' => ['required'],
-            'charge' => ['required'],
-            'charge_type' => ['required'],
-            'rate' => ['required'],
-            'minimum_deposit' => ['required'],
-            'maximum_deposit' => ['required'],
-            'status' => ['required'],
-            'field_options' => ['required_if:type,==,manual'],
+            'gateway_id' => ['required_if:type,auto', 'nullable', 'integer', 'exists:gateways,id'],
+            'currency' => ['required', 'string', 'size:3'],
+            'currency_symbol' => ['required', 'string', 'max:10'],
+            'charge' => ['required', 'numeric', 'min:0'],
+            'charge_type' => ['required', 'in:percentage,fixed'],
+            'rate' => ['required', 'numeric', 'gt:0'],
+            'minimum_deposit' => ['required', 'numeric', 'min:0'],
+            'maximum_deposit' => ['required', 'numeric', 'min:0'],
+            'status' => ['required', 'boolean'],
+            'field_options' => ['required_if:type,manual'],
         ]);
 
         if ($validator->fails()) {
             notify()->error($validator->errors()->first(), 'Error');
 
-            return back();
+            return back()->withInput();
         }
 
-        $depositMethod = DepositMethod::find($id);
+        $minimumDeposit = (float) $input['minimum_deposit'];
+        $maximumDeposit = (float) $input['maximum_deposit'];
+        if ($maximumDeposit > 0 && $maximumDeposit < $minimumDeposit) {
+            notify()->error(__('Maximum top-up must be zero (unlimited) or greater than/equal to the minimum top-up.'), 'Error');
+
+            return back()->withInput();
+        }
+
+        $depositMethod = DepositMethod::findOrFail($id);
+        $gateway = isset($input['gateway_id']) ? Gateway::findOrFail($input['gateway_id']) : null;
+        if ($gateway?->gateway_code === 'rayplusmoney' && strtoupper(trim($input['currency'])) !== 'XOF') {
+            notify()->error(__('RayPlusMoney deposit methods must use XOF as the gateway currency.'), 'Error');
+
+            return back()->withInput();
+        }
 
         $user = auth()->user();
-        if ($depositMethod->type == GatewayType::Automatic) {
+        if ($depositMethod->type === GatewayType::Automatic->value) {
             if (! $user->can('automatic-gateway-manage')) {
                 return to_route('admin.deposit.method.list', $depositMethod->type);
             }
@@ -161,13 +188,13 @@ class DepositController extends Controller
             'name' => $input['name'],
             'type' => $input['type'],
             'gateway_id' => $input['gateway_id'] ?? null,
-            'currency' => $input['currency'],
+            'currency' => strtoupper(trim($input['currency'])),
             'currency_symbol' => $input['currency_symbol'],
             'charge' => $input['charge'],
             'charge_type' => $input['charge_type'],
-            'rate' => $input['rate'],
-            'minimum_deposit' => $input['minimum_deposit'],
-            'maximum_deposit' => $input['maximum_deposit'],
+            'rate' => (float) $input['rate'],
+            'minimum_deposit' => (float) $input['minimum_deposit'],
+            'maximum_deposit' => (float) $input['maximum_deposit'],
             'status' => $input['status'],
             'field_options' => ($input['field_options'] ?? null),
             'payment_details' => isset($input['payment_details']) ? Purifier::clean(htmlspecialchars_decode($input['payment_details'])) : null,

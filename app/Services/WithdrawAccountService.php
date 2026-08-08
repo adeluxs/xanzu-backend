@@ -94,9 +94,10 @@ class WithdrawAccountService
         return $withdrawAccount;
     }
 
-    public function delete($id)
+    public function delete($id, ?int $userId = null)
     {
         $withdrawAccounts = WithdrawAccount::query()
+            ->when($userId !== null, fn ($query) => $query->where('user_id', $userId))
             ->find($id);
         if (!$withdrawAccounts) {
             throw new \Exception('Withdraw account not found');

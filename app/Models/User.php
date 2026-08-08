@@ -426,6 +426,10 @@ class User extends Authenticatable implements CanUseTickets, MustVerifyEmail
             'notifications_permission' => 'array',
             'validity_at' => 'datetime',
             'card_status' => 'boolean',
+            'deposit_status' => 'boolean',
+            'withdraw_status' => 'boolean',
+            'transfer_status' => 'boolean',
+            'transfer_kyc_verified' => 'boolean',
         ];
     }
 

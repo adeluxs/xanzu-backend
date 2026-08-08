@@ -9,10 +9,17 @@ use Illuminate\Support\Facades\Validator;
 
 class TransferLimitController extends Controller
 {
+    public function __construct()
+    {
+        $this->middleware('permission:site-setting');
+    }
     public function index()
     {
         $limits = TransferLimit::orderBy('user_type')->get();
-        return view('backend.transfer_limit.index', compact('limits'));
+        $configuredTypes = $limits->pluck('user_type')->all();
+        $availableTypes = array_values(array_diff(['all', 'buyer', 'merchant'], $configuredTypes));
+
+        return view('backend.transfer_limit.index', compact('limits', 'availableTypes'));
     }
 
     public function store(Request $request)

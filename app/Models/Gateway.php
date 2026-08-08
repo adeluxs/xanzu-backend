@@ -12,6 +12,9 @@ class Gateway extends Model
 
     protected $guarded = ['id'];
 
+    // API resources may eager-load the parent gateway. Never serialize secrets.
+    protected $hidden = ['credentials'];
+
     protected function scopeCode($query, $code)
     {
         return $query->where('gateway_code', $code);

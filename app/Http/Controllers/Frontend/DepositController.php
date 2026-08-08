@@ -34,6 +34,12 @@ class DepositController extends GatewayController
         return view('frontend::deposit.now', compact('gateways'));
     }
 
+    public function store(Request $request)
+    {
+        // Backward-compatible alias used by the legacy deposit/store route.
+        return $this->depositNow($request);
+    }
+
     public function depositNow(Request $request)
     {
 
@@ -60,7 +66,11 @@ class DepositController extends GatewayController
 
         $input = $request->all();
 
-        $gatewayInfo = DepositMethod::code($input['gateway_code'])->first();
+        $gatewayInfo = DepositMethod::code($input['gateway_code'])->where('status', 1)->first();
+        if (! $gatewayInfo) {
+            notify()->error(__('Selected deposit method is unavailable.'), 'Error');
+            return back();
+        }
         $amount = $input['amount'];
 
         if ($amount < $gatewayInfo->minimum_deposit || $amount > $gatewayInfo->maximum_deposit) {

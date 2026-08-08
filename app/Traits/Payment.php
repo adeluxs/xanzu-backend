@@ -46,7 +46,8 @@ trait Payment
         $txn = $txnInfo->tnx;
         Session::put('deposit_tnx', $txn);
 
-        $gateway = DepositMethod::code($gateway)->first()->gateway->gateway_code ?? 'none';
+        $depositMethod = DepositMethod::code($gateway)->with('gateway')->first();
+        $gateway = $depositMethod?->gateway?->gateway_code ?? $depositMethod?->gateway_code ?? 'none';
 
         $gatewayTxn = self::gatewayMap($gateway, $txnInfo);
         if ($gatewayTxn) {

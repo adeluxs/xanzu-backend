@@ -383,7 +383,7 @@
 
             {{-- ************************************************************* Site Essentials
             ********************************************************* --}}
-            @canany(['landing-page-manage', 'page-manage', 'footer-manage', 'navigation-manage', 'custom-css'])
+            @canany(['landing-page-manage', 'page-manage', 'footer-manage', 'navigation-manage', 'custom-css', 'site-setting', 'email-setting', 'plugin-setting', 'language-setting'])
                 <li class="side-nav-item category-title">
                     <span>{{ __('Settings & Appearance') }}</span>
                 </li>
@@ -393,7 +393,7 @@
                 @canany(['site-setting', 'email-setting', 'plugin-setting', 'page-manage', 'language-setting',
                     'sms-setting', 'push-notification-setting', 'notification-tune-setting'])
                     <li
-                        class="side-nav-item side-nav-dropdown {{ isActive(['admin.settings*', 'admin.language*', 'admin.page.setting']) }}">
+                        class="side-nav-item side-nav-dropdown {{ isActive(['admin.settings*', 'admin.transfer-limit.*', 'admin.language*', 'admin.page.setting']) }}">
                         <a href="javascript:void(0);" class="dropdown-link"><i data-lucide="settings"></i>
                             <span>{{ __('Settings') }}</span><span class="right-arrow"><i
                                     data-lucide="chevron-down"></i></span></a>
@@ -402,6 +402,16 @@
                                 <li class="{{ isActive('admin.settings.site') }}">
                                     <a href="{{ route('admin.settings.site') }}"><i
                                             data-lucide="settings-2"></i>{{ __('Site Settings') }}</a>
+                                </li>
+                            @endcan
+                            @can('site-setting')
+                                <li class="{{ isActive('admin.settings.transfer') }}">
+                                    <a href="{{ route('admin.settings.transfer') }}"><i
+                                            data-lucide="send"></i>{{ __('Transfer Settings') }}</a>
+                                </li>
+                                <li class="{{ isActive('admin.transfer-limit.*') }}">
+                                    <a href="{{ route('admin.transfer-limit.index') }}"><i
+                                            data-lucide="gauge"></i>{{ __('Transfer Limits') }}</a>
                                 </li>
                             @endcan
                             @can('email-setting')
