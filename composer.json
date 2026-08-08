@@ -108,7 +108,11 @@
             "@php scripts/check-psr4.php"
         ],
         "pre-autoload-dump": [
+            "@deployment-cleanup",
             "@php scripts/check-psr4.php"
+        ],
+        "deployment-cleanup": [
+            "@php scripts/cleanup-stale-deployment-files.php"
         ]
     },
     "repositories": [
