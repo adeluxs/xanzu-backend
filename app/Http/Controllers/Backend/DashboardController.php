@@ -21,6 +21,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class DashboardController extends Controller
 {
@@ -94,15 +95,15 @@ class DashboardController extends Controller
             'total_ticket' => Ticket::count(),
         ]);
 
-        // Aggregate login activity in the database rather than caching every
-        // historical login row in application memory.
-        $browser = Cache::remember('admin.dashboard.login-browser.v2', now()->addMinutes(2), fn () =>
-            LoginActivities::query()->select('browser', DB::raw('COUNT(*) AS aggregate_count'))
-                ->whereNotNull('browser')->groupBy('browser')->pluck('aggregate_count', 'browser')->toArray()
+        // browser/platform were historically virtual accessors parsed from `agent`,
+        // so older databases do not have physical columns. Use fast SQL grouping
+        // after the additive migration, with a chunked legacy fallback that works
+        // immediately when code is deployed before migrations are run.
+        $browser = Cache::remember('admin.dashboard.login-browser.v3', now()->addMinutes(2), fn () =>
+            $this->loginActivityBreakdown('browser')
         );
-        $platform = Cache::remember('admin.dashboard.login-platform.v2', now()->addMinutes(2), fn () =>
-            LoginActivities::query()->select('platform', DB::raw('COUNT(*) AS aggregate_count'))
-                ->whereNotNull('platform')->groupBy('platform')->pluck('aggregate_count', 'platform')->toArray()
+        $platform = Cache::remember('admin.dashboard.login-platform.v3', now()->addMinutes(2), fn () =>
+            $this->loginActivityBreakdown('platform')
         );
 
         $country = Cache::remember('admin.dashboard.country-top5.v2', now()->addMinutes(2), fn () =>
@@ -157,6 +158,53 @@ class DashboardController extends Controller
         ];
 
         return view('backend.dashboard', compact('data'));
+    }
+
+    private function loginActivityBreakdown(string $attribute): array
+    {
+        if (! in_array($attribute, ['browser', 'platform'], true)) {
+            return [];
+        }
+
+        $counts = [];
+        $hasColumn = false;
+
+        try {
+            $hasColumn = Schema::hasColumn('login_activities', $attribute);
+        } catch (\Throwable) {
+            // Keep the dashboard usable during partial/rolling deployments.
+        }
+
+        if ($hasColumn) {
+            $counts = LoginActivities::query()
+                ->select($attribute, DB::raw('COUNT(*) AS aggregate_count'))
+                ->whereNotNull($attribute)
+                ->where($attribute, '!=', '')
+                ->groupBy($attribute)
+                ->pluck('aggregate_count', $attribute)
+                ->map(fn ($count) => (int) $count)
+                ->toArray();
+        }
+
+        $legacyQuery = LoginActivities::query()->select('id', 'agent')->whereNotNull('agent')->where('agent', '!=', '');
+        if ($hasColumn) {
+            $legacyQuery->where(function (Builder $query) use ($attribute) {
+                $query->whereNull($attribute)->orWhere($attribute, '');
+            });
+        }
+
+        $legacyQuery->chunkById(1000, function ($rows) use (&$counts, $attribute) {
+            foreach ($rows as $row) {
+                $label = LoginActivities::parseClientInfo($row->agent)[$attribute] ?? null;
+                if ($label !== null && $label !== '') {
+                    $counts[$label] = ($counts[$label] ?? 0) + 1;
+                }
+            }
+        });
+
+        arsort($counts);
+
+        return $counts;
     }
 
     private function dateWindow(Request $request): array
