@@ -40,23 +40,27 @@ class AuthController extends Controller
             return $this->errorResponse($validator->errors()->first(), 422);
         }
 
-        $email = $request->input('email');
+        $email = trim((string) $request->input('email'));
         $type = !$this->isEmail($email) ? 'username' : 'email';
         $column = $type === 'email' ? 'email' : 'username';
+
+        try {
+            $this->ensureIsNotRateLimited($type, $request);
+        } catch (ValidationException $exception) {
+            return $this->validationErrorResponse($exception->errors());
+        }
 
         $user = User::where($column, $email)->where('user_type', 'merchant')->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
-            RateLimiter::hit($this->throttleKey($request->email));
+            RateLimiter::hit($this->throttleKey($email));
 
             return $this->validationErrorResponse(__('auth.failed'));
         } else if ($user->status == 0) {
             return $this->validationErrorResponse(__('Your account is deactivated. Please contact support.'));
         }
 
-        $this->ensureIsNotRateLimited($type, $request);
-
-        RateLimiter::clear($this->throttleKey($request->email));
+        RateLimiter::clear($this->throttleKey($email));
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
@@ -358,11 +362,10 @@ class AuthController extends Controller
 
         $token = random_int(100000, 999999);
 
-        DB::table('password_reset_tokens')->insert([
-            'email' => $request->email,
-            'token' => $token,
-            'created_at' => Carbon::now(),
-        ]);
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $request->email],
+            ['token' => (string) $token, 'created_at' => Carbon::now()]
+        );
 
         $url = route('password.reset', ['token' => $token, 'email' => $request->email]);
 
@@ -523,11 +526,10 @@ class AuthController extends Controller
     {
         $otp = random_int(100000, 999999);
 
-        DB::table('password_reset_tokens')->insert([
-            'email' => $user->email,
-            'token' => $otp,
-            'created_at' => Carbon::now(),
-        ]);
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $user->email],
+            ['token' => (string) $otp, 'created_at' => Carbon::now()]
+        );
 
         $shortcodes = [
             '[[otp]]' => $otp,

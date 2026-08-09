@@ -16,26 +16,27 @@ class ForgotPasswordController extends Controller
 {
     use ApiResponse, NotifyTrait;
 
+    private const OTP_TTL_MINUTES = 15;
+
     public function sendResetOtpEmail(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email|exists:users',
+            'email' => ['required', 'email', 'exists:users,email'],
         ]);
 
         if ($validator->fails()) {
             return $this->errorResponse($validator->errors()->first(), 422);
         }
 
+        $email = strtolower(trim((string) $request->email));
         $token = random_int(100000, 999999);
 
-        DB::table('password_reset_tokens')->insert([
-            'email' => $request->email,
-            'token' => $token,
-            'created_at' => Carbon::now(),
-        ]);
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $email],
+            ['token' => (string) $token, 'created_at' => Carbon::now()]
+        );
 
-        $url = route('password.reset', ['token' => $token, 'email' => $request->email]);
-
+        $url = route('password.reset', ['token' => $token, 'email' => $email]);
         $shortcodes = [
             '[[token]]' => $token,
             '[[reset_url]]' => $url,
@@ -43,7 +44,7 @@ class ForgotPasswordController extends Controller
             '[[site_url]]' => route('home'),
         ];
 
-        $this->sendNotify($request->email, 'forgot_password_otp', 'User', $shortcodes, null, null);
+        $this->sendNotify($email, 'forgot_password_otp', 'User', $shortcodes, null, null);
 
         return $this->successResponse([
             'otp' => app()->isProduction() ? null : $token,
@@ -53,23 +54,17 @@ class ForgotPasswordController extends Controller
     public function verifyOtp(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email|exists:users',
-            'otp' => 'required|digits:6',
+            'email' => ['required', 'email', 'exists:users,email'],
+            'otp' => ['required', 'digits:6'],
         ]);
 
         if ($validator->fails()) {
             return $this->errorResponse($validator->errors()->first(), 422);
         }
 
-        $updatePassword = DB::table('password_reset_tokens')
-            ->where([
-                'email' => $request->email,
-                'token' => $request->otp,
-            ])
-            ->first();
-
-        if (! $updatePassword) {
-            return $this->validationErrorResponse('Invalid otp');
+        $record = $this->validOtp(strtolower(trim((string) $request->email)), (string) $request->otp);
+        if (! $record) {
+            return $this->validationErrorResponse('Invalid or expired OTP');
         }
 
         return $this->successWithoutDataResponse('OTP verified successfully');
@@ -78,30 +73,32 @@ class ForgotPasswordController extends Controller
     public function resetPassword(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'otp' => 'required',
-            'email' => 'required|email',
-            'password' => 'required|min:6|confirmed',
+            'otp' => ['required', 'digits:6'],
+            'email' => ['required', 'email', 'exists:users,email'],
+            'password' => ['required', 'min:6', 'confirmed'],
         ]);
 
         if ($validator->fails()) {
             return $this->validationErrorResponse($validator->errors()->first());
         }
 
-        $updatePassword = DB::table('password_reset_tokens')
-            ->where([
-                'email' => $request->email,
-                'token' => $request->otp,
-            ])
-            ->first();
-
-        if (! $updatePassword) {
-            return $this->validationErrorResponse('Invalid otp');
+        $email = strtolower(trim((string) $request->email));
+        if (! $this->validOtp($email, (string) $request->otp)) {
+            return $this->validationErrorResponse('Invalid or expired OTP');
         }
 
-        User::where('email', $request->email)->update(['password' => Hash::make($request->password)]);
-
-        DB::table('password_reset_tokens')->where('email', $request->email)->delete();
+        User::where('email', $email)->update(['password' => Hash::make((string) $request->password)]);
+        DB::table('password_reset_tokens')->where('email', $email)->delete();
 
         return $this->successWithoutDataResponse('Password reset successfully');
+    }
+
+    private function validOtp(string $email, string $otp): ?object
+    {
+        return DB::table('password_reset_tokens')
+            ->where('email', $email)
+            ->where('token', $otp)
+            ->where('created_at', '>=', Carbon::now()->subMinutes(self::OTP_TTL_MINUTES))
+            ->first();
     }
 }

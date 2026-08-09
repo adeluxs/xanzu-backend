@@ -1117,19 +1117,28 @@ if (!function_exists('generateUniqueUsername')) {
 if (!function_exists('formatPhoneNumber')) {
     function formatPhoneNumber($phone, $dialCode = null, $withPlus = true, $skipDialCode = false)
     {
-        $dialCodeWithoutPlus = str_starts_with($dialCode, '+') ? substr($dialCode, 1) : $dialCode;
+        $rawPhone = trim((string) $phone);
+        $rawDialCode = trim((string) $dialCode);
 
-        // clear phone
+        // Keep digits only so spaces, brackets and dashes entered by mobile
+        // keyboards do not create different identities for the same number.
+        $phoneDigits = preg_replace('/\D+/', '', $rawPhone) ?? '';
+        $dialDigits = preg_replace('/\D+/', '', $rawDialCode) ?? '';
 
-        if (str_starts_with($phone, '+')) {
-            $phone = substr($phone, 1);
+        if ($dialDigits !== '' && str_starts_with($phoneDigits, $dialDigits)) {
+            $phoneDigits = substr($phoneDigits, strlen($dialDigits));
         }
 
-        if (str_starts_with($phone, $dialCodeWithoutPlus)) {
-            $phone = substr($phone, strlen($dialCodeWithoutPlus));
+        if ($skipDialCode) {
+            return $phoneDigits;
         }
 
-        return ($withPlus ? '+' : '') . ($skipDialCode ? '' : $dialCodeWithoutPlus) . $phone;
+        $full = $dialDigits.$phoneDigits;
+        if ($full === '') {
+            return '';
+        }
+
+        return ($withPlus ? '+' : '').$full;
     }
 }
 

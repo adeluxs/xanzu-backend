@@ -295,20 +295,18 @@ class GeneralController extends Controller
 
     public function getRegisterFields($type = 'user')
     {
-        $registerFields = Cache::remember(
-            'api.register-fields.base.'.($type === 'merchant' ? 'merchant' : 'user'),
-            now()->addMinutes(10),
-            function () use ($type) {
-                return PageSetting::select(['key', 'value'])
-                    ->whereNotLike('key', 'app_%')
-                    ->when($type === 'merchant', function ($query) {
-                        return $query->whereLike('key', 'merchant_%');
-                    }, function ($query) {
-                        return $query->whereNotLike('key', 'merchant_%');
-                    })
-                    ->get();
-            }
-        )->map(function ($field) {
+        // Registration requirements must reflect the current admin settings.
+        // Serving a stale cached field list can make the mobile form omit a
+        // field that the registration validator has just made mandatory.
+        $registerFields = PageSetting::select(['key', 'value'])
+            ->whereNotLike('key', 'app_%')
+            ->when($type === 'merchant', function ($query) {
+                return $query->whereLike('key', 'merchant_%');
+            }, function ($query) {
+                return $query->whereNotLike('key', 'merchant_%');
+            })
+            ->get()
+            ->map(function ($field) {
             if (str_starts_with($field->key, 'app_')) {
                 $field->value = file_exists(base_path('assets/' . $field->value)) ? asset($field->value) : $field->value;
             }

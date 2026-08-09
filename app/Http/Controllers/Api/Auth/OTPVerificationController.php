@@ -10,11 +10,13 @@ use App\Traits\NotifyTrait;
 use App\Traits\SmsTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Validator;
+use Illuminate\Support\Facades\Validator;
 
 class OTPVerificationController extends Controller
 {
     use ApiResponse, NotifyTrait, SmsTrait;
+
+    private const RESEND_COOLDOWN_SECONDS = 45;
 
     public function send(Request $request)
     {
@@ -22,37 +24,57 @@ class OTPVerificationController extends Controller
             return $this->validationErrorResponse('OTP verification is disabled');
         }
 
-        // validate re request if before expires
-
-        if (User::where('phone', $request->dial_code.$request->phone)->exists()) {
-            return $this->validationErrorResponse('Phone number already registered');
-        } elseif (PhoneOtp::where('phone', $request->phone)->where('dial_code', $request->dial_code)->where('expires_at', '>', Carbon::now())->exists()) {
-            return $this->validationErrorResponse('OTP already sent. Please wait before requesting again.');
-        }
-
         $validation = Validator::make($request->all(), [
-            'phone' => 'required|string',
-            'dial_code' => 'required|exists:countries,dial_code',
+            'phone' => ['required', 'string', 'max:30'],
+            'dial_code' => ['required', 'exists:countries,dial_code'],
         ]);
 
         if ($validation->fails()) {
             return $this->validationErrorResponse($validation->errors()->first());
         }
 
-        $phone = formatPhoneNumber($request->phone, $request->dial_code, false, true);
+        $dialCode = trim((string) $request->dial_code);
+        $localPhone = formatPhoneNumber((string) $request->phone, $dialCode, false, true);
+        $fullPhone = formatPhoneNumber($localPhone, $dialCode, true, false);
 
-        $isDemo = ! app()->isProduction() || env('APP_DEMO');
+        if (User::where('phone', $fullPhone)->exists()) {
+            return $this->validationErrorResponse('Phone number already registered');
+        }
 
+        $existingOtp = PhoneOtp::query()
+            ->where('phone', $localPhone)
+            ->where('dial_code', $dialCode)
+            ->latest('id')
+            ->first();
+
+        if ($existingOtp && ! $existingOtp->is_verified && $existingOtp->created_at) {
+            $retryAt = $existingOtp->created_at->copy()->addSeconds(self::RESEND_COOLDOWN_SECONDS);
+            if ($retryAt->isFuture()) {
+                return $this->validationErrorResponse(
+                    'OTP already sent. Please wait '.$retryAt->diffInSeconds(now()).' seconds before requesting another code.'
+                );
+            }
+        }
+
+        $isDemo = ! app()->isProduction() || (bool) env('APP_DEMO');
         $token = $isDemo ? 111111 : random_int(100000, 999999);
 
-        PhoneOtp::insert(
-            [
-                'phone' => $phone,
+        if ($existingOtp) {
+            $existingOtp->update([
                 'otp' => $token,
                 'expires_at' => Carbon::now()->addMinutes(10),
-                'dial_code' => $request->dial_code,
-            ]
-        );
+                'is_verified' => false,
+            ]);
+            $otpRecord = $existingOtp->fresh();
+        } else {
+            $otpRecord = PhoneOtp::create([
+                'phone' => $localPhone,
+                'otp' => $token,
+                'expires_at' => Carbon::now()->addMinutes(10),
+                'dial_code' => $dialCode,
+                'is_verified' => false,
+            ]);
+        }
 
         $shortcodes = [
             '[[token]]' => $token,
@@ -61,39 +83,44 @@ class OTPVerificationController extends Controller
         ];
 
         if (! $isDemo) {
-            $this->sendNotify(null, 'otp', 'User', $shortcodes, $request->dial_code.$phone, null);
+            $this->sendNotify(null, 'otp', 'User', $shortcodes, $dialCode.$localPhone, null);
         }
 
-        return $this->successResponse(['otp' => ! $isDemo ? null : $token], 'OTP sent successfully!');
-
+        return $this->successResponse([
+            'otp' => ! $isDemo ? null : $token,
+            'otp_id' => $otpRecord?->id,
+        ], 'OTP sent successfully!');
     }
 
     public function verify(Request $request)
     {
-
         $validate = Validator::make($request->all(), [
-            'otp' => 'required|numeric',
-            'phone' => 'required|string|exists:phone_otps,phone',
-            'dial_code' => 'required|exists:countries,dial_code|exists:phone_otps,dial_code',
+            'otp' => ['required', 'numeric', 'digits:6'],
+            'phone' => ['required', 'string', 'max:30'],
+            'dial_code' => ['required', 'exists:countries,dial_code'],
         ]);
 
         if ($validate->fails()) {
             return $this->validationErrorResponse($validate->errors()->first());
         }
 
-        $otp = PhoneOtp::where('phone', $request->phone)
-            ->where('dial_code', $request->dial_code)
-            ->where('otp', $request->otp)
+        $dialCode = trim((string) $request->dial_code);
+        $localPhone = formatPhoneNumber((string) $request->phone, $dialCode, false, true);
+
+        $otp = PhoneOtp::query()
+            ->where('phone', $localPhone)
+            ->where('dial_code', $dialCode)
+            ->where('otp', (string) $request->otp)
             ->where('expires_at', '>', Carbon::now())
             ->where('is_verified', false)
+            ->latest('id')
             ->first();
 
         if (! $otp) {
-            return $this->validationErrorResponse('Invalid otp');
+            return $this->validationErrorResponse('Invalid or expired OTP');
         }
-        $otp->update([
-            'is_verified' => true,
-        ]);
+
+        $otp->update(['is_verified' => true]);
 
         return $this->successResponse([
             'otp_id' => $otp->id,
