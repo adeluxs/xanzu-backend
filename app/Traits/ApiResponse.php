@@ -14,9 +14,11 @@ trait ApiResponse
         return response()->json([
             'status' => true,
             'message' => $message,
+            'code' => 'SUCCESS',
             'data' => $data,
             'meta' => $meta,
             'status_code' => $code,
+            'request_id' => request()->attributes->get('request_id'),
         ], $code, [], JSON_PRESERVE_ZERO_FRACTION);
     }
 
@@ -25,8 +27,10 @@ trait ApiResponse
         return response()->json([
             'status' => false,
             'message' => $message,
+            'code' => $this->errorCodeForStatus($code),
             'data' => $data,
             'status_code' => $code,
+            'request_id' => request()->attributes->get('request_id'),
         ], $code);
     }
 
@@ -55,7 +59,24 @@ trait ApiResponse
         return response()->json([
             'status' => true,
             'message' => $message,
+            'code' => 'SUCCESS',
+            'data' => null,
             'status_code' => $code,
+            'request_id' => request()->attributes->get('request_id'),
         ], $code);
+    }
+
+    private function errorCodeForStatus(int $status): string
+    {
+        return match ($status) {
+            400 => 'BAD_REQUEST',
+            401 => 'UNAUTHORIZED',
+            403 => 'FORBIDDEN',
+            404 => 'NOT_FOUND',
+            409 => 'CONFLICT',
+            422 => 'VALIDATION_FAILED',
+            429 => 'RATE_LIMITED',
+            default => $status >= 500 ? 'SERVER_ERROR' : 'REQUEST_FAILED',
+        };
     }
 }

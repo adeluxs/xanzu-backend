@@ -29,12 +29,23 @@ class RegisterController extends Controller
 
     public function store(Request $request)
     {
+        $requestId = (string) Str::uuid();
+        $request->attributes->set('request_id', $requestId);
         $otpEnabled = (bool) setting('otp_verification', 'permission');
         $firstNameRequired = $this->isFieldRequired('first_name');
         $lastNameRequired = $this->isFieldRequired('last_name');
         $usernameRequired = $this->isFieldRequired('username');
         $referralCodeRequired = $this->isFieldRequired('referral_code');
         $genderRequired = $this->isFieldRequired('gender');
+
+        Log::info('Mobile registration request received', [
+            'request_id' => $requestId,
+            'email' => Str::lower(trim((string) $request->input('email'))),
+            'has_phone' => $request->filled('phone'),
+            'has_otp_id' => $request->filled('otp_id'),
+            'otp_enabled' => $otpEnabled,
+            'ip' => $request->ip(),
+        ]);
 
         $validator = Validator::make($request->all(), [
             'first_name' => [Rule::requiredIf($firstNameRequired), 'nullable', 'string', 'max:255'],
@@ -54,6 +65,11 @@ class RegisterController extends Controller
         ]);
 
         if ($validator->fails()) {
+            Log::warning('Mobile registration validation failed', [
+                'request_id' => $requestId,
+                'fields' => array_keys($validator->errors()->toArray()),
+                'errors' => $validator->errors()->toArray(),
+            ]);
             return $this->validationErrorResponse($validator->errors()->toArray());
         }
 
@@ -153,12 +169,19 @@ class RegisterController extends Controller
             /** @var User $user */
             $user = $result['user'];
 
+            Log::info('Mobile registration completed', [
+                'request_id' => $requestId,
+                'user_id' => $user->id,
+                'otp_enabled' => $otpEnabled,
+            ]);
+
             return $this->successResponse(
                 MobileAuthPayload::make($user, $result['token']),
                 'Registration successful!'
             );
         } catch (\Throwable $throwable) {
             Log::error('Registration Error', [
+                'request_id' => $requestId,
                 'message' => $throwable->getMessage(),
                 'exception' => get_class($throwable),
                 'email' => $request->input('email'),

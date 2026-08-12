@@ -11,6 +11,8 @@ use App\Services\AddMoneyService;
 use App\Services\Payments\RayplusmoneyService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class AddMoneyController extends Controller
@@ -64,6 +66,16 @@ class AddMoneyController extends Controller
 
     public function store(Request $request)
     {
+        $requestId = (string) Str::uuid();
+        $request->attributes->set('request_id', $requestId);
+        Log::info('Mobile add-money request received', [
+            'request_id' => $requestId,
+            'user_id' => auth()->id(),
+            'gateway' => $request->input('gateway'),
+            'amount' => $request->input('amount'),
+            'custom_field_names' => array_keys((array) $request->input('customFields', [])),
+        ]);
+
         try {
             $this->addMoneyService->validate($request->all());
             $response = $this->addMoneyService->process(
@@ -72,14 +84,30 @@ class AddMoneyController extends Controller
                 $request->customFields ?? null
             );
 
+            Log::info('Mobile add-money gateway request accepted', [
+                'request_id' => $requestId,
+                'user_id' => auth()->id(),
+                'gateway' => $request->input('gateway'),
+                'transaction' => data_get($response, 'tnx') ?? data_get($response, 'transaction'),
+            ]);
+
             return $this->successResponse($response, __('Deposit request successful.'));
         } catch (ValidationException $e) {
+            Log::warning('Mobile add-money validation failed', [
+                'request_id' => $requestId,
+                'user_id' => auth()->id(),
+                'gateway' => $request->input('gateway'),
+                'fields' => array_keys($e->errors()),
+                'errors' => $e->errors(),
+            ]);
             return $this->validationErrorResponse($e->errors());
         } catch (\Throwable $e) {
-            \Log::error('Add money request failed.', [
+            Log::error('Add money request failed.', [
+                'request_id' => $requestId,
                 'user_id' => auth()->id(),
                 'gateway' => $request->gateway,
                 'error' => $e->getMessage(),
+                'exception' => get_class($e),
             ]);
             return $this->errorResponse(__('Unable to start the deposit. Please try again.'), 500);
         }
