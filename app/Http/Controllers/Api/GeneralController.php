@@ -138,6 +138,18 @@ class GeneralController extends Controller
         });
 
         $settings = $settings->merge($legal_pages);
+
+        // Always expose one authoritative mobile registration flag. Relying
+        // only on the generic settings collection made older/cached clients
+        // miss the OTP state and show the wrong signup action.
+        $settings = $settings
+            ->reject(fn ($setting) => data_get($setting, 'name') === 'registration_otp_enabled')
+            ->push([
+                'name' => 'registration_otp_enabled',
+                'value' => setting('otp_verification', 'permission') ? '1' : '0',
+            ])
+            ->values();
+
         // get user from api
         if ($type == 'all') {
             $settings = $settings->merge([

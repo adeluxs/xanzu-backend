@@ -66,7 +66,10 @@ class LoginController extends Controller
         $token = $user->createToken('auth_token')->plainTextToken;
         LoginActivities::add($user->id);
 
-        return $this->successResponse(MobileAuthPayload::make($user, $token));
+        return $this->successResponse(
+            MobileAuthPayload::make($user, $token),
+            __('Login successful.')
+        );
     }
 
     public function logout(Request $request)
