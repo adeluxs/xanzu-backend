@@ -19,8 +19,8 @@ class EmailVerificationController extends Controller
 
     public function sendVerifyEmail(Request $request)
     {
-        if (! setting('email_verification', 'permission')) {
-            return $this->validationErrorResponse('Email verification is disabled');
+        if (! setting_enabled('email_verification', 'permission')) {
+            return $this->errorResponse('Email verification is disabled', 403);
         }
 
         $user = $request->user();
@@ -58,11 +58,15 @@ class EmailVerificationController extends Controller
 
     public function verify(Request $request)
     {
+        if (! setting_enabled('email_verification', 'permission')) {
+            return $this->errorResponse('Email verification is disabled', 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'otp' => ['required', 'numeric', 'digits:6'],
         ]);
         if ($validator->fails()) {
-            return $this->validationErrorResponse($validator->errors()->first());
+            return $this->validationErrorResponse($validator->errors());
         }
 
         $user = $request->user();

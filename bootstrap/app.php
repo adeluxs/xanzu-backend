@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\CheckDeactivate;
+use App\Http\Middleware\ApiRequestId;
 use App\Http\Middleware\ClampApiPagination;
 use App\Http\Middleware\CheckFeatureAccess;
 use App\Http\Middleware\DemoMode;
@@ -28,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         // Keep every API list endpoint bounded, even when a client sends an
         // excessive per_page value. This protects DB, serializer and mobile memory.
+        $middleware->appendToGroup('api', ApiRequestId::class);
         $middleware->appendToGroup('api', ClampApiPagination::class);
 
         $middleware->alias([
@@ -77,8 +79,14 @@ return Application::configure(basePath: dirname(__DIR__))
                 } elseif // unauthorized
                 ($e instanceof \Illuminate\Auth\AuthenticationException) {
                     return response()->json([
+                        'success' => false,
+                        'status' => false,
                         'message' => 'Unauthenticated.',
+                        'code' => 'UNAUTHORIZED',
+                        'data' => null,
+                        'errors' => null,
                         'status_code' => 401,
+                        'request_id' => $request->attributes->get('request_id'),
                     ], 401);
                 }
             }

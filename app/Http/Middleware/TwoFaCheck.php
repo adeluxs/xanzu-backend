@@ -18,7 +18,7 @@ class TwoFaCheck
      */
     public function handle(Request $request, Closure $next)
     {
-        if (! setting('fa_verification', 'permission') || ! $request->user()->two_fa) {
+        if (! setting_enabled('fa_verification', 'permission') || ! $request->user()->two_fa) {
             return $next($request);
         }
 

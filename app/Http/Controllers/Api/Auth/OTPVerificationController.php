@@ -20,8 +20,8 @@ class OTPVerificationController extends Controller
 
     public function send(Request $request)
     {
-        if (! setting('otp_verification', 'permission')) {
-            return $this->validationErrorResponse('OTP verification is disabled');
+        if (! setting_enabled('otp_verification', 'permission')) {
+            return $this->errorResponse('OTP verification is disabled', 403);
         }
 
         $validation = Validator::make($request->all(), [
@@ -30,7 +30,7 @@ class OTPVerificationController extends Controller
         ]);
 
         if ($validation->fails()) {
-            return $this->validationErrorResponse($validation->errors()->first());
+            return $this->validationErrorResponse($validation->errors());
         }
 
         $dialCode = trim((string) $request->dial_code);
@@ -50,8 +50,15 @@ class OTPVerificationController extends Controller
         if ($existingOtp && ! $existingOtp->is_verified && $existingOtp->created_at) {
             $retryAt = $existingOtp->created_at->copy()->addSeconds(self::RESEND_COOLDOWN_SECONDS);
             if ($retryAt->isFuture()) {
-                return $this->validationErrorResponse(
-                    'OTP already sent. Please wait '.$retryAt->diffInSeconds(now()).' seconds before requesting another code.'
+                $retryAfter = $retryAt->diffInSeconds(now());
+                $message = 'OTP already sent. Please wait '.$retryAfter.' seconds before requesting another code.';
+
+                return $this->errorResponse(
+                    $message,
+                    429,
+                    ['retry_after_seconds' => $retryAfter],
+                    ['phone' => [$message]],
+                    'RATE_LIMITED'
                 );
             }
         }
@@ -94,6 +101,10 @@ class OTPVerificationController extends Controller
 
     public function verify(Request $request)
     {
+        if (! setting_enabled('otp_verification', 'permission')) {
+            return $this->errorResponse('OTP verification is disabled', 403);
+        }
+
         $validate = Validator::make($request->all(), [
             'otp' => ['required', 'numeric', 'digits:6'],
             'phone' => ['required', 'string', 'max:30'],
@@ -101,7 +112,7 @@ class OTPVerificationController extends Controller
         ]);
 
         if ($validate->fails()) {
-            return $this->validationErrorResponse($validate->errors()->first());
+            return $this->validationErrorResponse($validate->errors());
         }
 
         $dialCode = trim((string) $request->dial_code);

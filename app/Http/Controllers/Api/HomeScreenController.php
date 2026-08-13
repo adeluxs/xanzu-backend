@@ -435,9 +435,7 @@ class HomeScreenController extends Controller
             ->first();
 
         if (!$listing) {
-            return $this->errorResponse(
-                'Product not found',
-            );
+            return $this->notFoundResponse('Product not found');
         }
         $request->merge(['fullData' => true]); // To indicate we want full details in the resource
 
@@ -457,9 +455,7 @@ class HomeScreenController extends Controller
             ->first();
 
         if (!$listing) {
-            return $this->errorResponse(
-                'Product not found',
-            );
+            return $this->notFoundResponse('Product not found');
         }
 
         $reviews = $listing->reviews()
@@ -597,9 +593,7 @@ class HomeScreenController extends Controller
         $provider = Provider::active()->find($id);
 
         if (!$provider) {
-            return $this->errorResponse(
-                'Provider not found',
-            );
+            return $this->notFoundResponse('Provider not found');
         }
 
         $listings = Listing::query()

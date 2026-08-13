@@ -95,7 +95,12 @@ class CardApplicationController extends Controller
 
             return $this->successResponse($application, __('Card application submitted successfully.'));
         } catch (\Throwable $e) {
-            return $this->errorResponse($e->getMessage());
+            report($e);
+
+            return $this->errorResponse(
+                __('Unable to submit the card application. Please try again.'),
+                500
+            );
         }
     }
 }

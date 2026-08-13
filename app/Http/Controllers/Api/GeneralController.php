@@ -146,7 +146,7 @@ class GeneralController extends Controller
             ->reject(fn ($setting) => data_get($setting, 'name') === 'registration_otp_enabled')
             ->push([
                 'name' => 'registration_otp_enabled',
-                'value' => setting('otp_verification', 'permission') ? '1' : '0',
+                'value' => setting_enabled('otp_verification', 'permission') ? '1' : '0',
             ])
             ->values();
 
@@ -169,8 +169,8 @@ class GeneralController extends Controller
 
     public function getLanguages()
     {
-        if (!setting('language_switcher')) {
-            return $this->errorResponse('Language switcher is disabled');
+        if (! setting_enabled('language_switcher')) {
+            return $this->errorResponse('Language switcher is disabled', 403);
         }
         $languages = Cache::remember('api.languages.active', now()->addMinutes(30), function () {
             return Language::where('status', 1)->orderByDesc('is_default')->orderBy('name')->get();
@@ -242,14 +242,19 @@ class GeneralController extends Controller
         ]);
     }
 
-    public function markNotificationAsRead()
+    public function markNotificationAsRead($id = null)
     {
-        auth()->user()->notifications()->update(['read' => true]);
+        $query = auth()->user()->notifications();
+        if ($id !== null) {
+            $query->whereKey($id);
+        }
+        $query->update(['read' => true]);
 
-        return response()->json([
-            'status' => true,
-            'message' => __('All Notifications marked as read'),
-        ]);
+        return $this->successWithoutDataResponse(
+            $id === null
+                ? __('All notifications marked as read')
+                : __('Notification marked as read')
+        );
     }
 
     public function registerDevice(Request $request)
@@ -358,10 +363,7 @@ class GeneralController extends Controller
 
         }
 
-        return response()->json([
-            'status' => true,
-            'data' => $registerFields,
-        ]);
+        return $this->successResponse($registerFields);
     }
 
     public function getAppSplashOnboardingScreen()
@@ -388,10 +390,7 @@ class GeneralController extends Controller
             })->values();
         });
 
-        return response()->json([
-            'status' => true,
-            'data' => $splashScreens,
-        ]);
+        return $this->successResponse($splashScreens);
     }
 
     public function getSendMoneyConfig(Request $request)

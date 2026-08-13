@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Auth;
 use App\Http\Controllers\Controller;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class TwoFactorController extends Controller
 {
@@ -12,15 +13,18 @@ class TwoFactorController extends Controller
 
     public function __invoke(Request $request)
     {
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'code' => 'required|digits:6',
         ]);
+        if ($validator->fails()) {
+            return $this->validationErrorResponse($validator->errors());
+        }
 
         $user = $request->user();
         $google2fa = app('pragmarx.google2fa');
 
-        if (setting('fa_verification', 'permission') != 'enabled') {
-            return $this->validationErrorResponse('Two factor authentication verification is disabled');
+        if (! setting_enabled('fa_verification', 'permission')) {
+            return $this->errorResponse('Two factor authentication verification is disabled', 403);
         } elseif (! $user->two_fa) {
             return $this->validationErrorResponse('Two factor authentication is not enabled for this user');
         }

@@ -23,7 +23,7 @@ class NotificationController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return $this->validationErrorResponse($validator->errors()->first());
+            return $this->validationErrorResponse($validator->errors());
         }
 
         $user = $request->user();
@@ -75,10 +75,7 @@ class NotificationController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'status' => false,
-                'message' => $validator->errors()->first(),
-            ], 422);
+            return $this->validationErrorResponse($validator->errors());
         }
 
         if ($request->notification_id === null) {
@@ -88,10 +85,7 @@ class NotificationController extends Controller
                 ->where('read', 0)
                 ->update(['read' => 1]);
 
-            return response()->json([
-                'status' => true,
-                'message' => 'All notifications marked as read',
-            ]);
+            return $this->successWithoutDataResponse('All notifications marked as read');
         }
 
         $user = auth()->user();
@@ -100,17 +94,11 @@ class NotificationController extends Controller
             ->first();
 
         if (!$notification) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Notification not found',
-            ], 404);
+            return $this->notFoundResponse('Notification not found');
         }
 
         $notification->update(['read' => 1]);
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Notification marked as read',
-        ]);
+        return $this->successWithoutDataResponse('Notification marked as read');
     }
 }

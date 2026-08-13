@@ -41,7 +41,9 @@ class TicketController extends Controller
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (\Throwable $th) {
-            return $this->errorResponse($th->getMessage());
+            report($th);
+
+            return $this->errorResponse('Unable to create the ticket. Please try again.', 500);
         }
 
         return $this->successResponse(data: new TicketResource($ticket), message: 'Ticket created successfully');
@@ -55,12 +57,17 @@ class TicketController extends Controller
             $ticket = Ticket::query()
                 ->whereBelongsTo($request->user())
                 ->where('uuid', $uuid)
-                ->firstOrFail();
+                ->first();
+            if (! $ticket) {
+                return $this->notFoundResponse('Ticket not found');
+            }
             $message = $service->reply($request, $ticket);
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (\Throwable $th) {
-            return $this->errorResponse($th->getMessage());
+            report($th);
+
+            return $this->errorResponse('Unable to reply to the ticket. Please try again.', 500);
         }
 
         return $this->successResponse(TicketMessageResource::make($message), 'Ticket replied successfully');
@@ -71,7 +78,10 @@ class TicketController extends Controller
         $ticket = Ticket::query()
             ->whereBelongsTo($request->user())
             ->where('uuid', $id)
-            ->firstOrFail();
+            ->first();
+        if (! $ticket) {
+            return $this->notFoundResponse('Ticket not found');
+        }
 
         $limit = min(100, max(20, $request->integer('message_limit', 60)));
         $beforeId = $request->integer('before_id');
@@ -111,12 +121,20 @@ class TicketController extends Controller
         $service = new TicketService;
 
         try {
-            $ticket = Ticket::query()->whereBelongsTo($request->user())->where('uuid', $uuid)->firstOrFail();
+            $ticket = Ticket::query()
+                ->whereBelongsTo($request->user())
+                ->where('uuid', $uuid)
+                ->first();
+            if (! $ticket) {
+                return $this->notFoundResponse('Ticket not found');
+            }
             $ticket = $service->close($ticket);
         } catch (ValidationException $e) {
             return $this->validationErrorResponse($e->errors());
         } catch (\Throwable $th) {
-            return $this->errorResponse($th->getMessage());
+            report($th);
+
+            return $this->errorResponse('Unable to close the ticket. Please try again.', 500);
         }
 
         return $this->successResponse(TicketResource::make($ticket), 'Ticket closed successfully');

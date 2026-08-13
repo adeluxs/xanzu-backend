@@ -8,10 +8,10 @@ final class MobileAuthPayload
 {
     public static function make(User $user, string $token): array
     {
-        $requiresEmailVerification = (bool) setting('email_verification', 'permission')
+        $requiresEmailVerification = setting_enabled('email_verification', 'permission')
             && ! $user->hasVerifiedEmail();
 
-        $requiresTwoFactor = (bool) setting('fa_verification', 'permission')
+        $requiresTwoFactor = setting_enabled('fa_verification', 'permission')
             && (bool) $user->two_fa;
 
         return [

@@ -31,7 +31,10 @@ class LoginActivities extends Model
         $model = new static;
         $model->user_id = $id ?? Auth::id();
         $model->ip = request()->ip();
-        $model->location = getLocation()->name;
+        // Authentication must not wait for an external IP-geolocation call.
+        // Reverse proxies may provide a country code; otherwise location stays
+        // nullable and can be enriched asynchronously by reporting jobs.
+        $model->location = self::requestLocationHint();
         $model->agent = request()->userAgent();
 
         if (self::hasClientInfoColumns()) {
@@ -45,6 +48,18 @@ class LoginActivities extends Model
         $model->save();
 
         return $model;
+    }
+
+    private static function requestLocationHint(): ?string
+    {
+        foreach (['CF-IPCountry', 'X-Country-Code', 'CloudFront-Viewer-Country'] as $header) {
+            $value = trim((string) request()->header($header));
+            if ($value !== '') {
+                return mb_substr($value, 0, 255);
+            }
+        }
+
+        return null;
     }
 
     public static function parseClientInfo(?string $userAgent): array

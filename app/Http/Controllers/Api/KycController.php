@@ -72,7 +72,12 @@ class KycController extends Controller
 
             return $this->successWithoutDataResponse(__('KYC submission has been submitted successfully. We will review and get back to you soon.'));
         } catch (\Exception $e) {
-            return $this->errorResponse($e->getMessage());
+            report($e);
+
+            return $this->errorResponse(
+                __('Unable to submit KYC. Please try again.'),
+                500
+            );
         }
     }
 }

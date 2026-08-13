@@ -25,8 +25,8 @@ class SendMoneyController extends Controller
 
             if (!$user) {
                 Log::warning('SendMoneyController@config: Unauthorized request', [
+                    'request_id' => $request->attributes->get('request_id'),
                     'ip' => $request->ip(),
-                    'user_agent' => $request->userAgent(),
                 ]);
 
                 return $this->unauthorizedResponse('Unauthorized');
@@ -37,8 +37,9 @@ class SendMoneyController extends Controller
             return $this->successResponse($responseData);
         } catch (\Throwable $th) {
             Log::error('SendMoneyController@config: Failed', [
-                'error' => $th->getMessage(),
-                'trace' => $th->getTraceAsString(),
+                'request_id' => $request->attributes->get('request_id'),
+                'user_id' => auth()->id(),
+                'error_type' => get_class($th),
             ]);
 
             return $this->errorResponse('Failed to load transfer config', 500);
@@ -63,9 +64,9 @@ class SendMoneyController extends Controller
             $fieldErrors = $this->formatFieldErrors($e);
 
             Log::warning('SendMoneyController@validateTransferRequest: Validation failed', [
+                'request_id' => $request->attributes->get('request_id'),
                 'user_id' => auth()->id(),
-                'errors' => $fieldErrors,
-                'request_data' => $request->all(),
+                'fields' => array_keys($e->errors()),
             ]);
 
             return $this->structuredErrorResponse(
@@ -76,9 +77,9 @@ class SendMoneyController extends Controller
             );
         } catch (\Throwable $th) {
             Log::error('SendMoneyController@validateTransferRequest: Unexpected error', [
+                'request_id' => $request->attributes->get('request_id'),
                 'user_id' => auth()->id(),
-                'error' => $th->getMessage(),
-                'trace' => $th->getTraceAsString(),
+                'error_type' => get_class($th),
             ]);
 
             return $this->errorResponse('An unexpected error occurred during validation.', 500);
@@ -102,17 +103,26 @@ class SendMoneyController extends Controller
                 return $this->structuredErrorResponse(
                     message: 'Recipient not found.',
                     errorCode: 'RECIPIENT_NOT_FOUND',
-                    statusCode: 200
+                    statusCode: 404
                 );
             }
 
             return $this->successResponse($result);
+        } catch (ValidationException $e) {
+            $fieldErrors = $this->formatFieldErrors($e);
+
+            return $this->structuredErrorResponse(
+                message: $fieldErrors['general'] ?? 'Validation failed.',
+                errorCode: 'VALIDATION_FAILED',
+                fieldErrors: $fieldErrors,
+                statusCode: 422
+            );
         } catch (\Throwable $th) {
             Log::error('SendMoneyController@lookupRecipient: Error', [
+                'request_id' => $request->attributes->get('request_id'),
                 'user_id' => auth()->id(),
-                'lookup_phone' => $request->input('phone'),
-                'error' => $th->getMessage(),
-                'trace' => $th->getTraceAsString(),
+                'has_lookup_phone' => $request->filled('phone'),
+                'error_type' => get_class($th),
             ]);
 
             return $this->errorResponse('An unexpected error occurred during lookup.', 500);
@@ -133,9 +143,9 @@ class SendMoneyController extends Controller
             $fieldErrors = $this->formatFieldErrors($e);
 
             Log::warning('SendMoneyController@store: Validation failed', [
+                'request_id' => $request->attributes->get('request_id'),
                 'user_id' => auth()->id(),
-                'errors' => $fieldErrors,
-                'request_data' => $request->all(),
+                'fields' => array_keys($e->errors()),
             ]);
 
             return $this->structuredErrorResponse(
@@ -146,10 +156,9 @@ class SendMoneyController extends Controller
             );
         } catch (\Throwable $th) {
             Log::error('SendMoneyController@store: Failed', [
+                'request_id' => $request->attributes->get('request_id'),
                 'user_id' => auth()->id(),
-                'error' => $th->getMessage(),
-                'trace' => $th->getTraceAsString(),
-                'request_data' => $request->all(),
+                'error_type' => get_class($th),
             ]);
 
             return $this->errorResponse('An unexpected error occurred while processing your transfer.', 500);
@@ -247,11 +256,16 @@ class SendMoneyController extends Controller
         ];
 
         return response()->json([
+            'success' => false,
             'status' => false,
             'status_code' => $errorCode,
+            'http_status' => $statusCode,
+            'code' => $errorCode,
             'message' => $message,
             'data' => null,
+            'errors' => $fieldErrors,
             'meta' => array_merge($defaultMeta, $meta ?? []),
+            'request_id' => request()->attributes->get('request_id'),
         ], $statusCode);
     }
 

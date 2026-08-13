@@ -29,18 +29,20 @@ class RegisterController extends Controller
 
     public function store(Request $request)
     {
-        $requestId = (string) Str::uuid();
+        $requestId = (string) ($request->attributes->get('request_id') ?: Str::uuid());
         $request->attributes->set('request_id', $requestId);
-        $otpEnabled = (bool) setting('otp_verification', 'permission');
+        $otpEnabled = setting_enabled('otp_verification', 'permission');
         $firstNameRequired = $this->isFieldRequired('first_name');
         $lastNameRequired = $this->isFieldRequired('last_name');
         $usernameRequired = $this->isFieldRequired('username');
         $referralCodeRequired = $this->isFieldRequired('referral_code');
         $genderRequired = $this->isFieldRequired('gender');
 
-        Log::info('Mobile registration request received', [
+        Log::info('MOBILE SIGNUP REQUEST RECEIVED', [
             'request_id' => $requestId,
-            'email' => Str::lower(trim((string) $request->input('email'))),
+            'endpoint' => $request->path(),
+            'method' => $request->method(),
+            'has_email' => $request->filled('email'),
             'has_phone' => $request->filled('phone'),
             'has_otp_id' => $request->filled('otp_id'),
             'otp_enabled' => $otpEnabled,
@@ -65,10 +67,10 @@ class RegisterController extends Controller
         ]);
 
         if ($validator->fails()) {
-            Log::warning('Mobile registration validation failed', [
+            Log::warning('MOBILE SIGNUP VALIDATION FAILED', [
                 'request_id' => $requestId,
+                'status_code' => 422,
                 'fields' => array_keys($validator->errors()->toArray()),
-                'errors' => $validator->errors()->toArray(),
             ]);
             return $this->validationErrorResponse($validator->errors()->toArray());
         }
@@ -129,7 +131,9 @@ class RegisterController extends Controller
                     'email' => Str::lower(trim((string) $request->email)),
                     'password' => Hash::make((string) $request->password),
                     'user_type' => 'buyer',
-                    'transfer_status' => (bool) setting('transfer_default_buyer', 'transfer', true),
+                    'transfer_status' => value_is_enabled(
+                        setting('transfer_default_buyer', 'transfer', true)
+                    ),
                     'country' => $countryName,
                     'phone' => $phone,
                     'phone_verified_at' => $phoneOtp ? now() : null,
@@ -151,8 +155,6 @@ class RegisterController extends Controller
                     $this->processReferralBonus($referralUser, $user);
                 }
 
-                LoginActivities::add($user->id);
-
                 if ($phoneOtp) {
                     $phoneOtp->delete();
                 }
@@ -169,8 +171,26 @@ class RegisterController extends Controller
             /** @var User $user */
             $user = $result['user'];
 
-            Log::info('Mobile registration completed', [
+            Log::info('MOBILE SIGNUP TOKEN ISSUED', [
                 'request_id' => $requestId,
+                'user_id' => $user->id,
+            ]);
+
+            // Registration has already succeeded and a token exists. Activity
+            // telemetry is non-critical and must not suppress that response.
+            try {
+                LoginActivities::add($user->id);
+            } catch (\Throwable $throwable) {
+                Log::warning('MOBILE SIGNUP ACTIVITY WRITE FAILED', [
+                    'request_id' => $requestId,
+                    'user_id' => $user->id,
+                    'exception_type' => get_class($throwable),
+                ]);
+            }
+
+            Log::info('MOBILE SIGNUP SUCCESS', [
+                'request_id' => $requestId,
+                'status_code' => 200,
                 'user_id' => $user->id,
                 'otp_enabled' => $otpEnabled,
             ]);
@@ -180,11 +200,11 @@ class RegisterController extends Controller
                 'Registration successful!'
             );
         } catch (\Throwable $throwable) {
-            Log::error('Registration Error', [
+            Log::error('MOBILE SIGNUP ERROR', [
                 'request_id' => $requestId,
-                'message' => $throwable->getMessage(),
+                'status_code' => 500,
                 'exception' => get_class($throwable),
-                'email' => $request->input('email'),
+                'exception_code' => $throwable->getCode(),
             ]);
 
             return $this->errorResponse('Sorry! Something went wrong while creating your account. Please try again.', 500);
@@ -198,9 +218,9 @@ class RegisterController extends Controller
 
     public function processReferralBonus(User $referral, User $user): void
     {
-        $emailVerificationSatisfied = ! setting('email_verification', 'permission') || $user->email_verified_at !== null;
+        $emailVerificationSatisfied = ! setting_enabled('email_verification', 'permission') || $user->email_verified_at !== null;
 
-        if (! setting('sign_up_referral', 'permission') || ! $emailVerificationSatisfied) {
+        if (! setting_enabled('sign_up_referral', 'permission') || ! $emailVerificationSatisfied) {
             return;
         }
 
@@ -251,14 +271,14 @@ class RegisterController extends Controller
             Log::warning('Referral signup processing failed', [
                 'referral_user_id' => $referral->id,
                 'new_user_id' => $user->id,
-                'message' => $throwable->getMessage(),
+                'exception_type' => get_class($throwable),
             ]);
         }
     }
 
     private function distributeSignUpBonus(User $user): void
     {
-        if (setting('referral_signup_bonus', 'permission') && (float) setting('signup_bonus', 'fee') > 0) {
+        if (setting_enabled('referral_signup_bonus', 'permission') && (float) setting('signup_bonus', 'fee') > 0) {
             $signupBonus = (float) setting('signup_bonus', 'fee');
             $user->increment('balance', $signupBonus);
             (new Txn)->new($signupBonus, 0, $signupBonus, 'system', 'Signup Bonus', TxnType::SignupBonus, TxnStatus::Success, null, null, $user->id);

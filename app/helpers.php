@@ -82,6 +82,37 @@ if (!function_exists('setting')) {
     }
 }
 
+if (!function_exists('value_is_enabled')) {
+    /**
+     * Normalize feature flags returned by old and new settings records.
+     *
+     * Some installations store booleans as 0/1 while older records may use
+     * enabled/disabled strings. A direct PHP boolean cast treats every
+     * non-empty string, including "disabled", as true.
+     */
+    function value_is_enabled(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return (int) $value === 1;
+        }
+
+        return in_array(strtolower(trim((string) $value)), [
+            '1', 'true', 'yes', 'on', 'enabled', 'active',
+        ], true);
+    }
+}
+
+if (!function_exists('setting_enabled')) {
+    function setting_enabled(string $key, ?string $section = null, bool $default = false): bool
+    {
+        return value_is_enabled(setting($key, $section, $default));
+    }
+}
+
 if (!function_exists('oldSetting')) {
 
     function oldSetting($field, $section)

@@ -145,7 +145,7 @@ class AuthController extends Controller
 
             DB::commit();
 
-            if (setting('email_verification', 'permission')) {
+            if (setting_enabled('email_verification', 'permission')) {
                 $this->issueEmailVerificationOtp($user);
             }
 
@@ -184,7 +184,7 @@ class AuthController extends Controller
             'kyc_fields' => ['nullable', 'array'],
         ]);
 
-        if ($user->email != $request->email && setting('email_verification', 'permission')) {
+        if ($user->email != $request->email && setting_enabled('email_verification', 'permission')) {
             $validator->after(function ($validator) use ($request, $user) {
                 $validator->errors()->add('email', 'Changing email requires re-verification. Please verify your new email after submission.');
                 $user->email_verified_at = null;
@@ -242,7 +242,7 @@ class AuthController extends Controller
 
             DB::commit();
 
-            if (setting('email_verification', 'permission') && !$user->hasVerifiedEmail()) {
+            if (setting_enabled('email_verification', 'permission') && !$user->hasVerifiedEmail()) {
                 $this->issueEmailVerificationOtp($user);
             }
 
@@ -265,7 +265,7 @@ class AuthController extends Controller
 
     public function sendEmailOtp(Request $request)
     {
-        if (!setting('email_verification', 'permission')) {
+        if (! setting_enabled('email_verification', 'permission')) {
             return $this->validationErrorResponse('Email verification is disabled');
         }
 
@@ -300,7 +300,7 @@ class AuthController extends Controller
 
     public function verifyEmailOtp(Request $request)
     {
-        if (!setting('email_verification', 'permission')) {
+        if (! setting_enabled('email_verification', 'permission')) {
             return $this->validationErrorResponse('Email verification is disabled');
         }
 

@@ -25,7 +25,7 @@ class ForgotPasswordController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return $this->errorResponse($validator->errors()->first(), 422);
+            return $this->validationErrorResponse($validator->errors());
         }
 
         $email = strtolower(trim((string) $request->email));
@@ -59,7 +59,7 @@ class ForgotPasswordController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return $this->errorResponse($validator->errors()->first(), 422);
+            return $this->validationErrorResponse($validator->errors());
         }
 
         $record = $this->validOtp(strtolower(trim((string) $request->email)), (string) $request->otp);
@@ -79,7 +79,7 @@ class ForgotPasswordController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return $this->validationErrorResponse($validator->errors()->first());
+            return $this->validationErrorResponse($validator->errors());
         }
 
         $email = strtolower(trim((string) $request->email));

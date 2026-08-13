@@ -17,7 +17,8 @@ class OtpVerify
      */
     public function handle(Request $request, Closure $next)
     {
-        if (setting('otp_verification', 'permission') && $request->user()->phone_verified == 1) {
+        if (! setting_enabled('otp_verification', 'permission') ||
+            (int) $request->user()->phone_verified === 1) {
             return $next($request);
         }
 

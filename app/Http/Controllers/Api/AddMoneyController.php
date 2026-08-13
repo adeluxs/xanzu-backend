@@ -66,10 +66,12 @@ class AddMoneyController extends Controller
 
     public function store(Request $request)
     {
-        $requestId = (string) Str::uuid();
+        $requestId = (string) ($request->attributes->get('request_id') ?: Str::uuid());
         $request->attributes->set('request_id', $requestId);
-        Log::info('Mobile add-money request received', [
+        Log::info('ADD_MONEY_REQUEST', [
             'request_id' => $requestId,
+            'endpoint' => $request->path(),
+            'method' => $request->method(),
             'user_id' => auth()->id(),
             'gateway' => $request->input('gateway'),
             'amount' => $request->input('amount'),
@@ -84,8 +86,9 @@ class AddMoneyController extends Controller
                 $request->customFields ?? null
             );
 
-            Log::info('Mobile add-money gateway request accepted', [
+            Log::info('ADD_MONEY_RESPONSE', [
                 'request_id' => $requestId,
+                'status_code' => 200,
                 'user_id' => auth()->id(),
                 'gateway' => $request->input('gateway'),
                 'transaction' => data_get($response, 'tnx') ?? data_get($response, 'transaction'),
@@ -93,21 +96,22 @@ class AddMoneyController extends Controller
 
             return $this->successResponse($response, __('Deposit request successful.'));
         } catch (ValidationException $e) {
-            Log::warning('Mobile add-money validation failed', [
+            Log::warning('ADD_MONEY_VALIDATION_ERROR', [
                 'request_id' => $requestId,
+                'status_code' => 422,
                 'user_id' => auth()->id(),
                 'gateway' => $request->input('gateway'),
                 'fields' => array_keys($e->errors()),
-                'errors' => $e->errors(),
             ]);
             return $this->validationErrorResponse($e->errors());
         } catch (\Throwable $e) {
-            Log::error('Add money request failed.', [
+            Log::error('ADD_MONEY_ERROR', [
                 'request_id' => $requestId,
+                'status_code' => 500,
                 'user_id' => auth()->id(),
                 'gateway' => $request->gateway,
-                'error' => $e->getMessage(),
                 'exception' => get_class($e),
+                'exception_code' => $e->getCode(),
             ]);
             return $this->errorResponse(__('Unable to start the deposit. Please try again.'), 500);
         }

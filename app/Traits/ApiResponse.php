@@ -12,6 +12,7 @@ trait ApiResponse
     protected function successResponse($data = null, $message = 'Success', $code = 200, $meta = null)
     {
         return response()->json([
+            'success' => true,
             'status' => true,
             'message' => $message,
             'code' => 'SUCCESS',
@@ -22,13 +23,21 @@ trait ApiResponse
         ], $code, [], JSON_PRESERVE_ZERO_FRACTION);
     }
 
-    protected function errorResponse($message = 'Error', $code = 400, $data = null)
+    protected function errorResponse(
+        $message = 'Error',
+        $code = 400,
+        $data = null,
+        $errors = null,
+        ?string $errorCode = null
+    )
     {
         return response()->json([
+            'success' => false,
             'status' => false,
             'message' => $message,
-            'code' => $this->errorCodeForStatus($code),
+            'code' => $errorCode ?? $this->errorCodeForStatus($code),
             'data' => $data,
+            'errors' => $errors,
             'status_code' => $code,
             'request_id' => request()->attributes->get('request_id'),
         ], $code);
@@ -41,12 +50,22 @@ trait ApiResponse
 
     public function validationErrorResponse($errors)
     {
-        $errors = $errors instanceof MessageBag ? $errors->all() : $errors;
-        $errorStr = is_string($errors) ? $errors : \Arr::join(Arr::flatten($errors), ', ', ' and ');
+        $structuredErrors = $errors instanceof MessageBag
+            ? $errors->toArray()
+            : $errors;
+        $errorStr = is_string($structuredErrors)
+            ? $structuredErrors
+            : Arr::join(Arr::flatten($structuredErrors), ', ', ' and ');
 
         $errorStr = str($errorStr)->replace('.,', ',');
 
-        return $this->errorResponse($errorStr, 422, null);
+        return $this->errorResponse(
+            $errorStr,
+            422,
+            null,
+            is_string($structuredErrors) ? ['general' => [$structuredErrors]] : $structuredErrors,
+            'VALIDATION_FAILED'
+        );
     }
 
     public function unauthorizedResponse($message = 'Unauthorized')
@@ -57,6 +76,7 @@ trait ApiResponse
     public function successWithoutDataResponse($message = 'Success', $code = 200)
     {
         return response()->json([
+            'success' => true,
             'status' => true,
             'message' => $message,
             'code' => 'SUCCESS',
