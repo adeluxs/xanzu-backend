@@ -4,6 +4,7 @@ namespace App\Services\Payments;
 
 use App\Enums\TxnStatus;
 use App\Enums\TxnType;
+use App\Exceptions\PaymentGatewayException;
 use App\Models\Gateway;
 use App\Models\Transaction;
 use App\Models\User;
@@ -22,16 +23,43 @@ class RayplusmoneyService
     public function createPayin(Transaction $transaction): array
     {
         $transaction->loadMissing('user');
-        $credentials = $this->credentials();
+        try {
+            $credentials = $this->credentials();
+        } catch (\Throwable $e) {
+            throw new PaymentGatewayException(
+                __('RayPlusMoney is not configured correctly. Please contact support.'),
+                self::GATEWAY_CODE,
+                'PAYMENT_GATEWAY_CONFIGURATION_ERROR',
+                retryable: false,
+                diagnosticContext: [
+                    'configuration_error' => $this->sanitizeDiagnosticText($e->getMessage()),
+                    'exception' => get_class($e),
+                ],
+                previous: $e,
+            );
+        }
 
         $currency = strtoupper((string) $transaction->pay_currency);
         if ($currency !== 'XOF') {
-            throw new RuntimeException(__('RayPlusMoney pay-ins require the deposit method currency to be XOF.'));
+            throw new PaymentGatewayException(
+                __('RayPlusMoney pay-ins require the deposit method currency to be XOF.'),
+                self::GATEWAY_CODE,
+                'PAYMENT_GATEWAY_CONFIGURATION_ERROR',
+                diagnosticContext: ['pay_currency' => $currency],
+            );
         }
 
         $amount = (int) round((float) $transaction->pay_amount);
         if ($amount < 1) {
-            throw new RuntimeException(__('The RayPlusMoney payable amount must be at least 1 XOF.'));
+            throw new PaymentGatewayException(
+                __('The RayPlusMoney payable amount must be at least 1 XOF.'),
+                self::GATEWAY_CODE,
+                'PAYMENT_GATEWAY_CONFIGURATION_ERROR',
+                diagnosticContext: [
+                    'pay_amount' => $amount,
+                    'pay_currency' => $currency,
+                ],
+            );
         }
 
         [$firstName, $lastName] = $this->splitName((string) $transaction->user->full_name);
@@ -76,23 +104,102 @@ class RayplusmoneyService
             ],
         ];
 
-        $response = $this->client($credentials)->post(
-            $this->endpoint('redirect/checkout-invoice/create', $credentials),
-            $payload
-        );
+        $endpointPath = 'redirect/checkout-invoice/create';
+        $endpoint = $this->endpoint($endpointPath, $credentials);
 
-        $data = $this->decodeResponse($response->status(), $response->json(), $response->body());
-        if ((string) ($data['response_code'] ?? '') !== '00') {
-            throw new RuntimeException($this->gatewayErrorMessage($data, 'RayPlusMoney rejected the payment request.'));
+        try {
+            $response = $this->client($credentials)->post($endpoint, $payload);
+        } catch (\Throwable $e) {
+            throw new PaymentGatewayException(
+                __('Unable to contact RayPlusMoney. Please try again.'),
+                self::GATEWAY_CODE,
+                'PAYMENT_GATEWAY_UNAVAILABLE',
+                endpoint: $endpointPath,
+                retryable: true,
+                diagnosticContext: ['transport_exception' => get_class($e)],
+                previous: $e,
+            );
+        }
+
+        $httpStatus = $response->status();
+        $data = $response->json();
+        if (! is_array($data)) {
+            throw new PaymentGatewayException(
+                __('RayPlusMoney returned an invalid response. Please try again.'),
+                self::GATEWAY_CODE,
+                'PAYMENT_GATEWAY_INVALID_RESPONSE',
+                providerHttpStatus: $httpStatus,
+                endpoint: $endpointPath,
+                retryable: $httpStatus >= 500,
+                diagnosticContext: [
+                    'response_content_type' => $response->header('Content-Type'),
+                    'response_body_length' => strlen($response->body()),
+                ],
+            );
+        }
+
+        $providerCode = $this->providerCode($data);
+        $providerMessage = $this->sanitizeDiagnosticText(
+            $this->gatewayErrorMessage($data, 'RayPlusMoney rejected the payment request.')
+        );
+        $providerRequestId = $this->providerRequestId($data);
+
+        if ($httpStatus < 200 || $httpStatus >= 300 || $providerCode !== '00') {
+            $displayMessage = __('RayPlusMoney rejected the payment request: :reason', [
+                'reason' => $this->messageWithCode($providerMessage, $providerCode),
+            ]);
+            $exception = new PaymentGatewayException(
+                $displayMessage,
+                self::GATEWAY_CODE,
+                'PAYMENT_GATEWAY_REJECTED',
+                providerHttpStatus: $httpStatus,
+                providerCode: $providerCode !== '' ? $providerCode : null,
+                providerMessage: $providerMessage,
+                providerRequestId: $providerRequestId,
+                endpoint: $endpointPath,
+                retryable: $httpStatus >= 500,
+                diagnosticContext: [
+                    'pay_amount' => $amount,
+                    'pay_currency' => $currency,
+                    'response_fields' => array_slice(array_keys($data), 0, 30),
+                ],
+            );
+
+            Log::warning('RAYPLUS_PAYIN_REJECTED', [
+                'tnx' => $transaction->tnx,
+                ...$exception->logContext(),
+            ]);
+
+            throw $exception;
         }
 
         $token = trim((string) ($data['token'] ?? ''));
         $redirectUrl = trim((string) ($data['response_text'] ?? ''));
         if ($token === '') {
-            throw new RuntimeException(__('RayPlusMoney accepted the request without returning a transaction token.'));
+            throw new PaymentGatewayException(
+                __('RayPlusMoney accepted the request without returning a transaction token.'),
+                self::GATEWAY_CODE,
+                'PAYMENT_GATEWAY_INVALID_RESPONSE',
+                providerHttpStatus: $httpStatus,
+                providerCode: $providerCode,
+                providerRequestId: $providerRequestId,
+                endpoint: $endpointPath,
+                retryable: true,
+                diagnosticContext: ['response_fields' => array_slice(array_keys($data), 0, 30)],
+            );
         }
         if (! filter_var($redirectUrl, FILTER_VALIDATE_URL)) {
-            throw new RuntimeException(__('RayPlusMoney did not return a valid hosted payment URL.'));
+            throw new PaymentGatewayException(
+                __('RayPlusMoney did not return a valid hosted payment URL.'),
+                self::GATEWAY_CODE,
+                'PAYMENT_GATEWAY_INVALID_RESPONSE',
+                providerHttpStatus: $httpStatus,
+                providerCode: $providerCode,
+                providerRequestId: $providerRequestId,
+                endpoint: $endpointPath,
+                retryable: true,
+                diagnosticContext: ['response_fields' => array_slice(array_keys($data), 0, 30)],
+            );
         }
 
         $transaction->update(['approval_cause' => $token]);
@@ -444,13 +551,55 @@ class RayplusmoneyService
 
     private function gatewayErrorMessage(array $data, string $fallback): string
     {
-        foreach (['description', 'response_text', 'message'] as $key) {
-            $value = trim((string) Arr::get($data, $key, ''));
+        foreach (['description', 'response_text', 'message', 'error.message', 'error', 'errors.message', 'data.message'] as $key) {
+            $rawValue = Arr::get($data, $key, '');
+            if (! is_scalar($rawValue)) {
+                continue;
+            }
+            $value = trim((string) $rawValue);
             if ($value !== '' && ! filter_var($value, FILTER_VALIDATE_URL)) {
                 return $value;
             }
         }
         return __($fallback);
+    }
+
+    private function providerCode(array $data): string
+    {
+        return trim((string) ($data['response_code'] ?? $data['responseCode'] ?? $data['code'] ?? $data['status_code'] ?? ''));
+    }
+
+    private function providerRequestId(array $data): ?string
+    {
+        foreach (['request_id', 'requestId', 'reference', 'transaction_id', 'external_id', 'data.request_id', 'data.reference'] as $key) {
+            $rawValue = Arr::get($data, $key, '');
+            if (! is_scalar($rawValue)) {
+                continue;
+            }
+            $value = trim((string) $rawValue);
+            if ($value !== '') {
+                return Str::limit($value, 160, '');
+            }
+        }
+
+        return null;
+    }
+
+    private function messageWithCode(string $message, string $code): string
+    {
+        $message = Str::limit(trim($message), 300, '');
+        if ($code === '' || str_contains(strtolower($message), strtolower($code))) {
+            return $message;
+        }
+
+        return $message.' ('.$code.')';
+    }
+
+    private function sanitizeDiagnosticText(string $message): string
+    {
+        $message = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $message) ?? $message;
+
+        return Str::limit(trim($message), 300, '');
     }
 
 

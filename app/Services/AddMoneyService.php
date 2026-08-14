@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\TxnStatus;
 use App\Enums\TxnType;
+use App\Exceptions\PaymentGatewayException;
 use App\Facades\Txn\Txn;
 use App\Models\DepositMethod;
 use App\Models\Transaction;
@@ -140,6 +141,11 @@ class AddMoneyService
 
         try {
             $response = self::depositAutoGateway($gatewayInfo->gateway_code, $txnInfo);
+        } catch (PaymentGatewayException $e) {
+            $txnInfo->update(['status' => TxnStatus::Failed]);
+            $e->attachTransactionReference((string) $txnInfo->tnx);
+            Log::warning('AUTOMATIC_DEPOSIT_GATEWAY_REJECTED', $e->logContext());
+            throw $e;
         } catch (\Throwable $e) {
             // The transaction has already been persisted so the gateway can use
             // its reference. A gateway-init failure must therefore be recorded
@@ -148,9 +154,17 @@ class AddMoneyService
             Log::error('Automatic deposit gateway initialization failed.', [
                 'tnx' => $txnInfo->tnx,
                 'gateway' => $gatewayInfo->gateway_code,
-                'error' => $e->getMessage(),
+                'exception' => get_class($e),
+                'exception_code' => $e->getCode(),
             ]);
-            throw ValidationException::withMessages(['amount' => $e->getMessage()]);
+            throw (new PaymentGatewayException(
+                __('The payment provider could not start this deposit. Please try again.'),
+                (string) $gatewayInfo->gateway_code,
+                'PAYMENT_GATEWAY_INITIALIZATION_FAILED',
+                retryable: true,
+                diagnosticContext: ['exception' => get_class($e)],
+                previous: $e,
+            ))->attachTransactionReference((string) $txnInfo->tnx);
         }
 
         if (! needJsonResponse()) {

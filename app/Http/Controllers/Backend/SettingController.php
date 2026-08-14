@@ -11,7 +11,9 @@ use Illuminate\Contracts\View\Factory;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 
 class SettingController extends Controller
 {
@@ -96,6 +98,13 @@ class SettingController extends Controller
             $rules = Setting::getValidationRules($section);
         }
         $data = $this->validate($request, $rules);
+        $availabilityBefore = null;
+        if (($section ?? null) === 'service_availability') {
+            $availabilityBefore = [
+                'service_suspended' => setting_enabled('service_suspended', 'service_availability', false),
+                'service_suspension_message' => (string) setting('service_suspension_message', 'service_availability', ''),
+            ];
+        }
         try {
             $validSettings = array_keys($rules);
             foreach ($data as $key => $val) {
@@ -107,6 +116,22 @@ class SettingController extends Controller
                     }
 
                     Setting::add($key, $val, Setting::getDataType($key, $section));
+                }
+            }
+
+            if ($availabilityBefore !== null) {
+                $availabilityAfter = [
+                    'service_suspended' => setting_enabled('service_suspended', 'service_availability', false),
+                    'service_suspension_message' => (string) setting('service_suspension_message', 'service_availability', ''),
+                ];
+                if ($availabilityBefore !== $availabilityAfter) {
+                    Log::notice('SERVICE_AVAILABILITY_CHANGED', [
+                        'request_id' => $request->header('X-Request-ID') ?: (string) Str::uuid(),
+                        'admin_id' => auth('admin')->id(),
+                        'ip' => $request->ip(),
+                        'before' => $availabilityBefore,
+                        'after' => $availabilityAfter,
+                    ]);
                 }
             }
 

@@ -627,6 +627,28 @@ return [
         ],
     ],
 
+    'service_availability' => [
+        'title' => 'Service Availability',
+        'elements' => [
+            [
+                'type' => 'checkbox',
+                'data' => 'boolean',
+                'name' => 'service_suspended',
+                'label' => 'Suspend All HTTP Access',
+                'rules' => 'required|boolean',
+                'value' => 0,
+            ],
+            [
+                'type' => 'textarea',
+                'data' => 'string',
+                'name' => 'service_suspension_message',
+                'label' => 'Suspension Message',
+                'rules' => 'nullable|required_if:service_suspended,1|string|max:500',
+                'value' => 'Payment has not been made. Please contact the service provider to restore access.',
+            ],
+        ],
+    ],
+
     'gdpr' => [
         'title' => 'GDPR Settings',
         'elements' => [

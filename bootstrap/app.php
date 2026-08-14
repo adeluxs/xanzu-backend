@@ -1,10 +1,12 @@
 <?php
 
+use App\Console\Commands\ServiceAccessCommand;
 use App\Http\Middleware\CheckDeactivate;
 use App\Http\Middleware\ApiRequestId;
 use App\Http\Middleware\ClampApiPagination;
 use App\Http\Middleware\CheckFeatureAccess;
 use App\Http\Middleware\DemoMode;
+use App\Http\Middleware\EnsureServiceAvailable;
 use App\Http\Middleware\Localization;
 use App\Http\Middleware\OtpVerify;
 use App\Http\Middleware\TwoFaCheck;
@@ -26,11 +28,16 @@ return Application::configure(basePath: dirname(__DIR__))
         api: __DIR__ . '/../routes/api.php',
         health: '/up',
     )
+    ->withCommands([
+        ServiceAccessCommand::class,
+    ])
     ->withMiddleware(function (Middleware $middleware): void {
         // Keep every API list endpoint bounded, even when a client sends an
         // excessive per_page value. This protects DB, serializer and mobile memory.
         $middleware->appendToGroup('api', ApiRequestId::class);
         $middleware->appendToGroup('api', ClampApiPagination::class);
+        $middleware->appendToGroup('api', EnsureServiceAvailable::class);
+        $middleware->appendToGroup('web', EnsureServiceAvailable::class);
 
         $middleware->alias([
             'role' => RoleMiddleware::class,

@@ -48,6 +48,10 @@
         'fields' => $configSettings['site_maintenance'],
         'section' => 'site_maintenance',
     ])</div>
+    <div class="col-xl-6 col-lg-12 col-md-12 col-12">@include('backend.setting.site_setting.include.__service_availability', [
+        'fields' => $configSettings['service_availability'],
+        'section' => 'service_availability',
+    ])</div>
     <div class="col-xl-6 col-lg-12 col-md-12 col-12">@include('backend.setting.site_setting.include.__system', [
         'fields' => $configSettings['system'],
         'section' => 'system',

@@ -73,6 +73,11 @@ class GeneralController extends Controller
                 'maintenance_title',
                 'maintenance_text',
 
+                // Customer-facing service suspension. The settings endpoint
+                // remains available while suspended so mobile can recover.
+                'service_suspended',
+                'service_suspension_message',
+
                 // Referral & Bonus
                 'referral_commission',
                 'referral_bonus',
@@ -147,6 +152,26 @@ class GeneralController extends Controller
             ->push([
                 'name' => 'registration_otp_enabled',
                 'value' => setting_enabled('otp_verification', 'permission') ? '1' : '0',
+            ])
+            ->values();
+
+        $serviceSuspensionMessage = (string) setting(
+            'service_suspension_message',
+            'service_availability',
+            'Payment has not been made. Please contact the service provider to restore access.'
+        );
+        $settings = $settings
+            ->reject(fn ($setting) => in_array(data_get($setting, 'name'), [
+                'service_suspended',
+                'service_suspension_message',
+            ], true))
+            ->push([
+                'name' => 'service_suspended',
+                'value' => setting_enabled('service_suspended', 'service_availability', false) ? '1' : '0',
+            ])
+            ->push([
+                'name' => 'service_suspension_message',
+                'value' => $serviceSuspensionMessage,
             ])
             ->values();
 

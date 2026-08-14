@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\TxnStatus;
 use App\Enums\TxnType;
+use App\Exceptions\PaymentGatewayException;
 use App\Http\Controllers\Controller;
 use App\Models\DepositMethod;
 use App\Models\Transaction;
@@ -91,10 +92,27 @@ class AddMoneyController extends Controller
                 'status_code' => 200,
                 'user_id' => auth()->id(),
                 'gateway' => $request->input('gateway'),
-                'transaction' => data_get($response, 'tnx') ?? data_get($response, 'transaction'),
+                'transaction' => data_get($response, 'tnx') ?? data_get($response, 'transaction.tnx'),
             ]);
 
             return $this->successResponse($response, __('Deposit request successful.'));
+        } catch (PaymentGatewayException $e) {
+            Log::warning('ADD_MONEY_GATEWAY_ERROR', [
+                'request_id' => $requestId,
+                'status_code' => 502,
+                'user_id' => auth()->id(),
+                'gateway' => $request->input('gateway'),
+                'error_code' => $e->errorCode(),
+                ...$e->logContext(),
+            ]);
+
+            return $this->errorResponse(
+                $e->getMessage(),
+                502,
+                $e->publicContext(),
+                null,
+                $e->errorCode(),
+            );
         } catch (ValidationException $e) {
             Log::warning('ADD_MONEY_VALIDATION_ERROR', [
                 'request_id' => $requestId,
