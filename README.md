@@ -33,8 +33,9 @@ php artisan serve
 ```
 
 The application can safely complete Composer package discovery and boot
-Artisan before the `settings` table has been created. Settings use their
-configured defaults until the database migration creates that table.
+Artisan before the settings, themes, gateways, or plugins tables have been
+created. Settings use configured defaults, the bundled `default` theme is used,
+and optional gateway/plugin configuration is deferred until migrations finish.
 
 ## Documentation
 

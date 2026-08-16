@@ -124,9 +124,11 @@ Laravel is served by OpenLiteSpeed. Do not run `php artisan serve` in
 production.
 
 The backend is safe to boot during Composer's `package:discover` step even on
-a new database where the `settings` table has not been migrated yet. Do not use
-`--no-scripts` as a permanent workaround; if Composer still reports a missing
-`settings` table, confirm that this updated source is the version deployed.
+a new or partially imported database where core configuration tables have not
+been migrated yet. It uses the bundled default theme and defers database-backed
+settings, gateway, and plugin configuration until their tables exist. Do not
+use `--no-scripts` as a permanent workaround; if Composer still reports a
+missing core table, confirm that this updated source is the version deployed.
 
 ## 7. Expose Laravel under `/backend`
 

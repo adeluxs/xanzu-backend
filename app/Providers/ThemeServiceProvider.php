@@ -2,10 +2,8 @@
 
 namespace App\Providers;
 
-use App\Support\Performance\DatabaseAvailability;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\ServiceProvider;
-use Remotelywork\Installer\Repository\App;
 
 class ThemeServiceProvider extends ServiceProvider
 {
@@ -23,17 +21,17 @@ class ThemeServiceProvider extends ServiceProvider
      */
     public function boot()
     {
-        if (DatabaseAvailability::check()) {
-            $views = __DIR__.'/../../resources/views/frontend/'.site_theme();
-            $this->loadViewsFrom($views, 'frontend');
+        // site_theme() safely returns the bundled default theme until the
+        // themes table exists, allowing Composer and migrations to boot.
+        $theme = site_theme();
+        $views = __DIR__.'/../../resources/views/frontend/'.$theme;
+        $this->loadViewsFrom($views, 'frontend');
 
-            $request = $this->app['request'];
-            if (site_theme() == 'accxone' && ($request->is('seller/*') || $request->is('user/*'))) {
-                Paginator::defaultView('frontend.default.pagination.pagination');
-            } else {
-                Paginator::defaultView('frontend::pagination.pagination');
-            }
+        $request = $this->app['request'];
+        if ($theme === 'accxone' && ($request->is('seller/*') || $request->is('user/*'))) {
+            Paginator::defaultView('frontend.default.pagination.pagination');
+        } else {
+            Paginator::defaultView('frontend::pagination.pagination');
         }
-
     }
 }

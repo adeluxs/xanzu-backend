@@ -24,6 +24,7 @@ use App\Models\Ticket;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\OrderService;
+use App\Support\Performance\DatabaseAvailability;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Cache;
@@ -277,24 +278,34 @@ if (!function_exists('getLocation')) {
 if (!function_exists('gateway_info')) {
     function gateway_info($code)
     {
-        $info = Gateway::where('gateway_code', $code)->first();
+        if (! DatabaseAvailability::tableExists('gateways')) {
+            return null;
+        }
 
-        return json_decode($info->credentials);
+        $credentials = Gateway::where('gateway_code', $code)->value('credentials');
+
+        return is_string($credentials) ? json_decode($credentials) : null;
     }
 }
 
 if (!function_exists('plugin_active')) {
     function plugin_active($name)
     {
-        $plugin = Plugin::where('name', $name)->where('status', true)->first();
+        if (! DatabaseAvailability::tableExists('plugins')) {
+            return null;
+        }
 
-        return $plugin;
+        return Plugin::where('name', $name)->where('status', true)->first();
     }
 }
 
 if (!function_exists('default_plugin')) {
     function default_plugin($type)
     {
+        if (! DatabaseAvailability::tableExists('plugins')) {
+            return null;
+        }
+
         return Plugin::where('type', $type)->where('status', 1)->first('name')?->name;
     }
 }
@@ -380,6 +391,14 @@ if (!function_exists('is_custom_rate')) {
 if (!function_exists('site_theme')) {
     function site_theme()
     {
+        if (! DatabaseAvailability::tableExists('themes')) {
+            return 'default';
+        }
+
+        if (! app()->bound('cache')) {
+            return Theme::active();
+        }
+
         return Cache::rememberForever('system.site_theme', function () {
             return Theme::active();
         });

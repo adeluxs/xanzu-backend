@@ -7,8 +7,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Schema;
-use Throwable;
 
 class Setting extends Model
 {
@@ -61,15 +59,7 @@ class Setting extends Model
      */
     public static function tableExists(): bool
     {
-        if (! DatabaseAvailability::check()) {
-            return false;
-        }
-
-        try {
-            return Schema::hasTable((new static)->getTable());
-        } catch (Throwable) {
-            return false;
-        }
+        return DatabaseAvailability::tableExists((new static)->getTable());
     }
 
     /**
