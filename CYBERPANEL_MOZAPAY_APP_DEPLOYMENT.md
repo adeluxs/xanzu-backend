@@ -46,6 +46,7 @@ Extract the Laravel package so these files exist:
 ```text
 /home/mozapay.app/backend/artisan
 /home/mozapay.app/backend/composer.json
+/home/mozapay.app/backend/public/index.php
 ```
 
 Extract the Next.js package so these files exist:
@@ -138,8 +139,17 @@ previously interrupted pivot-table migration can therefore be resumed safely.
 
 ## 7. Expose Laravel under `/backend`
 
-Ensure `/home/mozapay.app/public_html/backend` does not already contain
-important files, then create a link to Laravel's public directory:
+This source includes a dedicated public entry directory. Link only that
+directory into the website document root. First expose the application's
+public assets from inside it:
+
+```bash
+cd /home/mozapay.app/backend/public
+ln -s ../assets assets
+```
+
+Then ensure `/home/mozapay.app/public_html/backend` does not already contain
+important files and create the public link:
 
 ```bash
 cd /home/mozapay.app/public_html
@@ -148,7 +158,17 @@ ls -la /home/mozapay.app/public_html/backend
 ```
 
 This keeps `.env`, source code, and Composer packages outside the public web
-directory.
+directory. If you deployed an earlier package, its `public` directory was
+missing and the resulting link was broken. Replace that broken link after
+uploading this version:
+
+```bash
+unlink /home/mozapay.app/public_html/backend
+ln -s ../backend/public /home/mozapay.app/public_html/backend
+```
+
+Do not link `/home/mozapay.app/public_html/backend` directly to the full
+Laravel project root.
 
 ## 8. Set permissions
 
@@ -206,7 +226,9 @@ npm install -g pm2
 Create `/home/mozapay.app/frontend/.env.production` before building:
 
 ```env
+API_URL=https://mozapay.app/backend/api
 NEXT_PUBLIC_API_URL=https://mozapay.app/backend/api
+FRONTEND_API_DEBUG=false
 ```
 
 Build and start the production application:
@@ -226,6 +248,19 @@ Check the local Node application:
 curl -I http://127.0.0.1:3000
 pm2 status
 pm2 logs mozapay-frontend --lines 100
+```
+
+Before starting Next.js, confirm the Laravel link and routes work. Every command
+below must return HTTP 200; a 404 means the `/backend` link or OpenLiteSpeed
+rewrite is still incorrect:
+
+```bash
+readlink -f /home/mozapay.app/public_html/backend
+curl -i https://mozapay.app/backend/up
+curl -i https://mozapay.app/backend/api/get-settings
+curl -i https://mozapay.app/backend/api/get-languages
+curl -i https://mozapay.app/backend/api/landing-data/en
+curl -i https://mozapay.app/backend/api/navigation/en
 ```
 
 ## 11. Configure the OpenLiteSpeed reverse proxy

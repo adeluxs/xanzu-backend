@@ -43,6 +43,17 @@ Raw foreign-key constraints from the imported schema are deferred until their
 referenced permission, role, order, and related tables exist. The repair is
 idempotent and supports tables left behind by an interrupted migration.
 
+For production, expose only the bundled `public` directory. The application
+stores its existing public assets in the root `assets` directory, so create the
+public asset link before serving it:
+
+```bash
+ln -s ../assets public/assets
+```
+
+The CyberPanel deployment commands and MozaPay API checks are documented in
+`CYBERPANEL_MOZAPAY_APP_DEPLOYMENT.md`.
+
 ## Documentation
 
 See `payment_gateway_documentation.md` for payment gateway integration details.
