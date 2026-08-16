@@ -39,6 +39,9 @@ and optional gateway/plugin configuration is deferred until migrations finish.
 Legacy add/alter migrations are also guarded against imported tables that are
 created later in the migration sequence, and a data-preserving repair migration
 completes the core user schema on a fresh database.
+Raw foreign-key constraints from the imported schema are deferred until their
+referenced permission, role, order, and related tables exist. The repair is
+idempotent and supports tables left behind by an interrupted migration.
 
 ## Documentation
 

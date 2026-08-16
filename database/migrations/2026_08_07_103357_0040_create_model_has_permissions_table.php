@@ -17,7 +17,9 @@ return new class extends Migration
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
             DB::statement('ALTER TABLE `model_has_permissions` ADD PRIMARY KEY (`permission_id`,`model_id`,`model_type`),
   ADD KEY `model_has_permissions_model_id_model_type_index` (`model_id`,`model_type`)');
-            DB::statement('ALTER TABLE `model_has_permissions` ADD CONSTRAINT `model_has_permissions_permission_id_foreign` FOREIGN KEY (`permission_id`) REFERENCES `permissions` (`id`) ON DELETE CASCADE');
+
+            // The permissions table is created by a later imported-schema
+            // migration. Its foreign key is added by the post-schema repair.
 
         } else {
             Schema::table('model_has_permissions', function (Blueprint $table) {

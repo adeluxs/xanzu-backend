@@ -132,6 +132,9 @@ missing core table, confirm that this updated source is the version deployed.
 The migration set also protects legacy column migrations from running before
 their imported base tables. This allows `php artisan migrate --force` to finish
 on a fresh database without requiring `migrate:fresh`.
+Imported raw foreign keys are installed in a post-schema repair migration after
+all referenced permission, role, user, order, and courier tables exist. A
+previously interrupted pivot-table migration can therefore be resumed safely.
 
 ## 7. Expose Laravel under `/backend`
 

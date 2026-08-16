@@ -17,7 +17,9 @@ return new class extends Migration
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
             DB::statement('ALTER TABLE `model_has_roles` ADD PRIMARY KEY (`role_id`,`model_id`,`model_type`),
   ADD KEY `model_has_roles_model_id_model_type_index` (`model_id`,`model_type`)');
-            DB::statement('ALTER TABLE `model_has_roles` ADD CONSTRAINT `model_has_roles_role_id_foreign` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE CASCADE');
+
+            // The roles table is created by a later imported-schema
+            // migration. Its foreign key is added by the post-schema repair.
 
         } else {
             Schema::table('model_has_roles', function (Blueprint $table) {
