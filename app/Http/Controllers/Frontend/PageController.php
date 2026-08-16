@@ -9,6 +9,7 @@ use App\Rules\Recaptcha;
 use App\Traits\NotifyTrait;
 use Exception;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Fluent;
 use Illuminate\Validation\Rule;
@@ -32,8 +33,23 @@ class PageController extends Controller
 
     }
 
-    public function getPage($section)
+    public function getPage(?string $section = null)
     {
+        $section = trim((string) ($section ?: request()->route('section')), '/');
+
+        // A stale route cache or a subdirectory web-server rewrite may dispatch
+        // the dynamic-page controller without its slug. Never turn that
+        // deployment condition into an ArgumentCountError for the visitor.
+        if ($section === '') {
+            Log::warning('DYNAMIC_PAGE_SECTION_MISSING', [
+                'method' => request()->method(),
+                'path' => request()->path(),
+                'route_name' => request()->route()?->getName(),
+            ]);
+
+            return redirect()->away(rtrim((string) config('app.frontend_url', config('app.url')), '/'));
+        }
+
         $page = Page::whereAny(['code', 'url'], $section)->where('status', true)->where('locale', app()->getLocale())->first();
 
 

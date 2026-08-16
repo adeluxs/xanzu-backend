@@ -73,5 +73,6 @@ Route::get('site-cron', [CronJobController::class, 'runCronJobs'])->middleware('
 
 // Dynamic Page
 Route::get('page/{section}', [PageController::class, 'getPage'])->name('dynamic.page');
-Route::get('{section}', [PageController::class, 'getPage'])->where('section', '^(?!admin$|admin/|api|login|register).*$')
+Route::get('{section}', [PageController::class, 'getPage'])
+    ->where('section', '^(?!admin(?:/|$)|api(?:/|$)|login$|register$).+$')
     ->name('page');

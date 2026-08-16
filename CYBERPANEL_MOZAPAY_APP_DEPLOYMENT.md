@@ -117,6 +117,16 @@ composer install --no-dev --prefer-dist --optimize-autoloader
 /usr/local/lsws/lsphp82/bin/php artisan optimize
 ```
 
+Run `optimize:clear` after every backend source update before recreating the
+production cache. Otherwise Laravel may continue using an older cached route
+definition even though `routes/web.php` has been replaced:
+
+```bash
+cd /home/mozapay.app/backend
+/usr/local/lsws/lsphp82/bin/php artisan optimize:clear
+/usr/local/lsws/lsphp82/bin/php artisan optimize
+```
+
 If the `composer` command uses a different PHP version, locate Composer with
 `command -v composer` and execute it through
 `/usr/local/lsws/lsphp82/bin/php`.
