@@ -28,9 +28,13 @@ Laravel 12 backend API for the Xanzu fintech and e-commerce platform.
 composer install
 cp .env.example .env
 php artisan key:generate
-php artisan migrate
+php artisan migrate --force
 php artisan serve
 ```
+
+The application can safely complete Composer package discovery and boot
+Artisan before the `settings` table has been created. Settings use their
+configured defaults until the database migration creates that table.
 
 ## Documentation
 

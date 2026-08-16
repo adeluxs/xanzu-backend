@@ -2,9 +2,9 @@
 
 namespace App\Providers;
 
-use App\Support\Performance\DatabaseAvailability;
 use App\Facades\Notification\Notify;
 use App\Facades\Txn\Txn;
+use App\Models\Setting;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Pagination\Paginator;
@@ -46,7 +46,9 @@ class AppServiceProvider extends ServiceProvider
             return new Txn;
         });
 
-        if (DatabaseAvailability::check()) {
+        // Composer package discovery and initial Artisan migrations boot the
+        // application before a fresh database necessarily has this table.
+        if (Setting::tableExists()) {
             $timezone = setting('site_timezone', 'global');
 
             config()->set([

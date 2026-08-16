@@ -7,7 +7,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
-use Remotelywork\Installer\Repository\App;
+use Illuminate\Support\Facades\Schema;
+use Throwable;
 
 class Setting extends Model
 {
@@ -30,6 +31,10 @@ class Setting extends Model
      */
     public static function add($key, $val, $type = 'string')
     {
+        if (! self::tableExists()) {
+            return false;
+        }
+
         if (self::has($key)) {
             return self::set($key, $val, $type);
         }
@@ -44,27 +49,43 @@ class Setting extends Model
      */
     public static function has($key)
     {
-        if (!DatabaseAvailability::check()) {
+        return (bool) self::getAllSettings()->whereStrict('name', $key)->count();
+    }
+
+    /**
+     * Determine whether settings can be read safely during application boot.
+     *
+     * Composer's package discovery and Artisan commands boot Laravel before
+     * migrations may have created the settings table. A successful database
+     * connection alone therefore does not mean the table is queryable.
+     */
+    public static function tableExists(): bool
+    {
+        if (! DatabaseAvailability::check()) {
             return false;
         }
 
-        return (bool) self::getAllSettings()->whereStrict('name', $key)->count();
+        try {
+            return Schema::hasTable((new static)->getTable());
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     /**
      * Get all the settings
      *
-     * @return mixed
+     * @return Collection<int, static>
      */
-    public static function getAllSettings()
+    public static function getAllSettings(): Collection
     {
-        if (!DatabaseAvailability::check()) {
-            return [];
+        if (! self::tableExists()) {
+            return collect();
         }
 
         // During very early bootstrap (eg, inside a service provider register),
         // the cache binding may not exist yet.
-        if (!app()->bound('cache')) {
+        if (! app()->bound('cache')) {
             return self::all();
         }
 
@@ -72,7 +93,6 @@ class Setting extends Model
             return self::all();
         });
     }
-
 
     private static function settingsByName(): Collection
     {
@@ -157,13 +177,9 @@ class Setting extends Model
      */
     public static function get($key, $section = null, $default = null)
     {
-        if (! DatabaseAvailability::check()) {
-            return self::getDefaultValue($key, $section, $default);
-        }
-
         // A setting() call is used throughout views, middleware and APIs. Do a
         // single cached collection lookup instead of has() + getAllSettings(),
-        // which previously repeated both the DB availability check and scan.
+        // and fall back to config while the database/table is unavailable.
         $setting = self::settingsByName()->get($key);
         if ($setting) {
             return self::castValue($setting->val, $setting->type);
@@ -241,6 +257,9 @@ class Setting extends Model
     public static function flushCache()
     {
         self::$requestSettingsByName = null;
-        Cache::forget('settings.all');
+
+        if (app()->bound('cache')) {
+            Cache::forget('settings.all');
+        }
     }
 }

@@ -123,6 +123,11 @@ If the `composer` command uses a different PHP version, locate Composer with
 Laravel is served by OpenLiteSpeed. Do not run `php artisan serve` in
 production.
 
+The backend is safe to boot during Composer's `package:discover` step even on
+a new database where the `settings` table has not been migrated yet. Do not use
+`--no-scripts` as a permanent workaround; if Composer still reports a missing
+`settings` table, confirm that this updated source is the version deployed.
+
 ## 7. Expose Laravel under `/backend`
 
 Ensure `/home/mozapay.app/public_html/backend` does not already contain

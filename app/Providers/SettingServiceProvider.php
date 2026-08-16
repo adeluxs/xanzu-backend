@@ -2,10 +2,8 @@
 
 namespace App\Providers;
 
-use App\Support\Performance\DatabaseAvailability;
+use App\Models\Setting;
 use Illuminate\Support\ServiceProvider;
-use Remotelywork\Installer\Repository\App;
-use Schema;
 
 class SettingServiceProvider extends ServiceProvider
 {
@@ -26,7 +24,7 @@ class SettingServiceProvider extends ServiceProvider
      */
     public function boot()
     {
-        if (DatabaseAvailability::check() && Schema::hasTable('settings')) {
+        if (Setting::tableExists()) {
 
             config()->set([
                 'mail.default' => setting('mailing_driver', 'mail'),
