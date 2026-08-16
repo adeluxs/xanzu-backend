@@ -10,31 +10,36 @@ return new class extends Migration {
      */
     public function up(): void
     {
-        // Add BNPL fields to providers table
-        Schema::table('providers', function (Blueprint $table) {
-            if (!Schema::hasColumn('providers', 'platform')) {
-                $table->string('platform', 255)->default('wordpress-woocommerce')->after('user_id');
-            }
-            if (!Schema::hasColumn('providers', 'platform_host')) {
-                $table->string('platform_host', 255)->nullable()->after('platform');
-            }
-            if (!Schema::hasColumn('providers', 'api_key')) {
-                $table->string('api_key', 255)->nullable()->after('platform_host');
-            }
-            if (!Schema::hasColumn('providers', 'api_secret')) {
-                $table->string('api_secret', 255)->nullable()->after('api_key');
-            }
-        });
+        // Fresh installations create this table in a later imported-schema
+        // migration, which already includes these columns.
+        if (Schema::hasTable('providers')) {
+            Schema::table('providers', function (Blueprint $table) {
+                if (! Schema::hasColumn('providers', 'platform')) {
+                    $table->string('platform', 255)->default('wordpress-woocommerce');
+                }
+                if (! Schema::hasColumn('providers', 'platform_host')) {
+                    $table->string('platform_host', 255)->nullable();
+                }
+                if (! Schema::hasColumn('providers', 'api_key')) {
+                    $table->string('api_key', 255)->nullable();
+                }
+                if (! Schema::hasColumn('providers', 'api_secret')) {
+                    $table->string('api_secret', 255)->nullable();
+                }
+            });
+        }
 
         // Add BNPL fields to users table
-        Schema::table('users', function (Blueprint $table) {
-            if (!Schema::hasColumn('users', 'api_key')) {
-                $table->string('api_key', 255)->nullable()->after('default_split');
-            }
-            if (!Schema::hasColumn('users', 'signature')) {
-                $table->string('signature', 255)->nullable()->after('api_key');
-            }
-        });
+        if (Schema::hasTable('users')) {
+            Schema::table('users', function (Blueprint $table) {
+                if (! Schema::hasColumn('users', 'api_key')) {
+                    $table->string('api_key', 255)->nullable();
+                }
+                if (! Schema::hasColumn('users', 'signature')) {
+                    $table->string('signature', 255)->nullable();
+                }
+            });
+        }
     }
 
     /**
@@ -42,12 +47,28 @@ return new class extends Migration {
      */
     public function down(): void
     {
-        Schema::table('providers', function (Blueprint $table) {
-            $table->dropColumn(['platform', 'platform_host', 'api_key', 'api_secret']);
-        });
+        if (Schema::hasTable('providers')) {
+            Schema::table('providers', function (Blueprint $table) {
+                $columns = array_values(array_filter(
+                    ['platform', 'platform_host', 'api_key', 'api_secret'],
+                    fn ($column) => Schema::hasColumn('providers', $column)
+                ));
+                if ($columns !== []) {
+                    $table->dropColumn($columns);
+                }
+            });
+        }
 
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn(['api_key', 'signature']);
-        });
+        if (Schema::hasTable('users')) {
+            Schema::table('users', function (Blueprint $table) {
+                $columns = array_values(array_filter(
+                    ['api_key', 'signature'],
+                    fn ($column) => Schema::hasColumn('users', $column)
+                ));
+                if ($columns !== []) {
+                    $table->dropColumn($columns);
+                }
+            });
+        }
     }
 };

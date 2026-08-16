@@ -10,6 +10,10 @@ return new class extends Migration {
      */
     public function up(): void
     {
+        if (! Schema::hasTable('listings')) {
+            return;
+        }
+
         Schema::table('listings', function (Blueprint $table) {
             if (!Schema::hasColumn('listings', 'product_url')) {
                 $table->string('product_url', 2048)->nullable()->after('provider_id');
@@ -27,6 +31,10 @@ return new class extends Migration {
      */
     public function down(): void
     {
+        if (! Schema::hasTable('listings')) {
+            return;
+        }
+
         Schema::table('listings', function (Blueprint $table) {
             if (Schema::hasColumn('listings', 'provider_product_id')) {
                 $table->dropIndex('listings_provider_provider_product_id_idx');

@@ -129,6 +129,9 @@ been migrated yet. It uses the bundled default theme and defers database-backed
 settings, gateway, and plugin configuration until their tables exist. Do not
 use `--no-scripts` as a permanent workaround; if Composer still reports a
 missing core table, confirm that this updated source is the version deployed.
+The migration set also protects legacy column migrations from running before
+their imported base tables. This allows `php artisan migrate --force` to finish
+on a fresh database without requiring `migrate:fresh`.
 
 ## 7. Expose Laravel under `/backend`
 

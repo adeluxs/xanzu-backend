@@ -2,10 +2,15 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
     public function up(): void
     {
+        if (! Schema::hasTable('landing_pages') || ! Schema::hasTable('landing_contents')) {
+            return;
+        }
+
         $themes = DB::table('landing_pages')->distinct()->pluck('theme');
 
         foreach ($themes as $theme) {

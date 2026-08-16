@@ -36,6 +36,9 @@ The application can safely complete Composer package discovery and boot
 Artisan before the settings, themes, gateways, or plugins tables have been
 created. Settings use configured defaults, the bundled `default` theme is used,
 and optional gateway/plugin configuration is deferred until migrations finish.
+Legacy add/alter migrations are also guarded against imported tables that are
+created later in the migration sequence, and a data-preserving repair migration
+completes the core user schema on a fresh database.
 
 ## Documentation
 

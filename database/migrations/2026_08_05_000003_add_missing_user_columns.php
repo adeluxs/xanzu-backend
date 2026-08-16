@@ -14,10 +14,10 @@ return new class extends Migration
 
         Schema::table('users', function (Blueprint $table) {
             if (!Schema::hasColumn('users', 'transfer_status')) {
-                $table->boolean('transfer_status')->default(1)->after('withdraw_status');
+                $table->boolean('transfer_status')->default(1);
             }
             if (!Schema::hasColumn('users', 'transfer_kyc_verified')) {
-                $table->boolean('transfer_kyc_verified')->default(0)->after('transfer_status');
+                $table->boolean('transfer_kyc_verified')->default(0);
             }
         });
     }

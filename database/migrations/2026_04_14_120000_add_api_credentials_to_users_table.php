@@ -7,23 +7,31 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
+        if (! Schema::hasTable('users')) {
+            return;
+        }
+
         Schema::table('users', function (Blueprint $table) {
-            if (!Schema::hasColumn('users', 'public_key')) {
-                $table->string('public_key', 191)->nullable()->after('signature');
+            if (! Schema::hasColumn('users', 'public_key')) {
+                $table->string('public_key', 191)->nullable();
             }
 
-            if (!Schema::hasColumn('users', 'secret_key')) {
-                $table->string('secret_key', 191)->nullable()->after('public_key');
+            if (! Schema::hasColumn('users', 'secret_key')) {
+                $table->string('secret_key', 191)->nullable();
             }
 
-            if (!Schema::hasColumn('users', 'webhook_secret')) {
-                $table->string('webhook_secret', 191)->nullable()->after('secret_key');
+            if (! Schema::hasColumn('users', 'webhook_secret')) {
+                $table->string('webhook_secret', 191)->nullable();
             }
         });
     }
 
     public function down(): void
     {
+        if (! Schema::hasTable('users')) {
+            return;
+        }
+
         Schema::table('users', function (Blueprint $table) {
             $dropColumns = [];
 

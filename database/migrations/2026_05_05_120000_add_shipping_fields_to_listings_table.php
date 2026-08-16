@@ -10,6 +10,10 @@ return new class extends Migration {
      */
     public function up(): void
     {
+        if (! Schema::hasTable('listings')) {
+            return;
+        }
+
         Schema::table('listings', function (Blueprint $table) {
             if (!Schema::hasColumn('listings', 'shipping_charge')) {
                 $table->decimal('shipping_charge', 28, 2)->nullable()->after('discount_type');
@@ -26,6 +30,10 @@ return new class extends Migration {
      */
     public function down(): void
     {
+        if (! Schema::hasTable('listings')) {
+            return;
+        }
+
         Schema::table('listings', function (Blueprint $table) {
             if (Schema::hasColumn('listings', 'shipping_charge_type')) {
                 $table->dropColumn('shipping_charge_type');

@@ -14,7 +14,10 @@ return new class extends Migration
                 $table->string('token', 191)->unique();
                 $table->foreignId('merchant_id')->constrained('users')->cascadeOnDelete();
                 $table->foreignId('buyer_id')->nullable()->constrained('users')->nullOnDelete();
-                $table->foreignId('order_id')->nullable()->constrained('orders')->nullOnDelete();
+                // Orders are created by a later imported-schema migration on a
+                // fresh install, so keep this relationship indexed without an
+                // early foreign-key dependency.
+                $table->foreignId('order_id')->nullable()->index();
                 $table->string('merchant_public_key', 191)->index();
                 $table->string('merchant_order_id', 191)->index();
                 $table->string('merchant_reference_id', 191)->nullable()->index();
