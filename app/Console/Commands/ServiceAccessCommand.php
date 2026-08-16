@@ -11,7 +11,7 @@ use Throwable;
 
 class ServiceAccessCommand extends Command
 {
-    private const DEFAULT_MESSAGE = 'Payment has not been made. Please contact the service provider to restore access.';
+    private const DEFAULT_MESSAGE = 'Payment has not been made. Please contact the Developer to restore access.';
 
     /**
      * The name and signature of the console command.

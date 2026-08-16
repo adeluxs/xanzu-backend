@@ -64,9 +64,9 @@ return [
     |
     */
 
-    'url' => env('APP_URL', 'http://localhost'),
+    'url' => env('APP_URL', 'https://mozapay.app/backend'),
 
-    'frontend_url' => env('FRONTEND_URL', 'https://xanzu.vercel.app/'),
+    'frontend_url' => env('FRONTEND_URL', 'https://mozapay.app'),
 
     'asset_url' => env('ASSET_URL'),
 

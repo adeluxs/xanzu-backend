@@ -158,7 +158,7 @@ class GeneralController extends Controller
         $serviceSuspensionMessage = (string) setting(
             'service_suspension_message',
             'service_availability',
-            'Payment has not been made. Please contact the service provider to restore access.'
+            'Payment has not been made. Please contact the Developer to restore access.'
         );
         $settings = $settings
             ->reject(fn ($setting) => in_array(data_get($setting, 'name'), [

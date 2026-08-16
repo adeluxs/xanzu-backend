@@ -22,7 +22,7 @@
         <div class="mark" aria-hidden="true">!</div>
         <h1>{{ __('Service temporarily unavailable') }}</h1>
         <p>{{ $suspensionMessage }}</p>
-        <small>{{ __('Please try again later or contact support.') }}</small>
+        <small>{{ __('Please try again later or contact the Developer.') }}</small>
     </main>
 </body>
 </html>

@@ -6,7 +6,7 @@ Run these commands from the application directory in the server terminal or host
 
 ```bash
 # Lock customer web, mobile API, and the administrator web panel.
-php artisan service:access suspend --message="Payment has not been made. Please contact the service provider to restore access."
+php artisan service:access suspend --message="Payment has not been made. Please contact the Developer to restore access."
 
 # Check the current state without changing it.
 php artisan service:access status

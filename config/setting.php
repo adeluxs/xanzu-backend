@@ -644,7 +644,7 @@ return [
                 'name' => 'service_suspension_message',
                 'label' => 'Suspension Message',
                 'rules' => 'nullable|required_if:service_suspended,1|string|max:500',
-                'value' => 'Payment has not been made. Please contact the service provider to restore access.',
+                'value' => 'Payment has not been made. Please contact the Developer to restore access.',
             ],
         ],
     ],
