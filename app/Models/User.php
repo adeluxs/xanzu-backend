@@ -130,8 +130,12 @@ class User extends Authenticatable implements CanUseTickets, MustVerifyEmail
                 $relativePath = Str::after($relativePath, 'assets/');
             }
 
+            // config('app.asset_url') already points to APP_URL/assets.
+            // Passing "assets/..." to asset() would therefore generate
+            // APP_URL/assets/assets/... and result in a 404. Keep the DB value
+            // relative to the asset root when generating the public URL.
             return file_exists(base_path('assets/' . $relativePath))
-                ? asset('assets/' . $relativePath)
+                ? asset($relativePath)
                 : self::getDefaultAvatar();
         });
     }

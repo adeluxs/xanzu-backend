@@ -43,6 +43,6 @@ class TicketMessageResource extends JsonResource
             return asset('front/images/user.jpg');
         }
 
-        return $this->user->avatar !== null && file_exists(base_path('assets/' . $this->user->avatar)) ? asset($this->user->avatar) : asset('front/images/user.jpg');
+        return $this->user?->avatar_path ?: asset('front/images/user.jpg');
     }
 }

@@ -17,7 +17,7 @@ class ListingReviewResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->buyer?->username ?? $this->buyer?->full_name ?? null,
-            'avatar' => $this->buyer?->avatar ? asset($this->buyer->avatar_path) : null,
+            'avatar' => $this->buyer?->avatar ? $this->buyer->avatar_path : null,
             'rating' => (int) $this->rating,
             'review' => $this->review,
             'created' => $this->created_at?->diffForHumans(),
