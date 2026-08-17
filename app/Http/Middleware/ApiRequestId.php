@@ -21,6 +21,7 @@ class ApiRequestId
         $request->attributes->set('request_id', $requestId);
 
         $authAction = $this->authAction($request);
+        $operation = $this->operation($request, $authAction);
         $startedAt = hrtime(true);
         $fileMeta = $this->fileMetadata($request);
 
@@ -30,6 +31,7 @@ class ApiRequestId
             'path' => $request->path(),
             'route' => $request->route()?->uri(),
             'auth_action' => $authAction,
+            'operation' => $operation,
             'mobile_client' => $request->header('X-Mobile-Client'),
             'accepts_json' => $request->expectsJson(),
             'content_type' => $request->header('Content-Type'),
@@ -47,6 +49,7 @@ class ApiRequestId
                 'path' => $request->path(),
                 'route' => $request->route()?->uri(),
                 'auth_action' => $authAction,
+                'operation' => $operation,
                 'user_id' => $this->userId($request),
                 'exception_type' => get_class($throwable),
                 'exception_message' => Str::limit($throwable->getMessage(), 1000),
@@ -57,17 +60,33 @@ class ApiRequestId
         }
 
         $response->headers->set('X-Request-ID', $requestId);
+        $envelope = $this->responseEnvelope($response);
+        $httpStatus = $response->getStatusCode();
 
-        Log::info('API_RESPONSE', array_filter([
+        $responseLog = array_filter([
             'request_id' => $requestId,
             'method' => $request->method(),
             'path' => $request->path(),
             'route' => $request->route()?->uri(),
             'auth_action' => $authAction,
+            'operation' => $operation,
             'user_id' => $this->userId($request),
-            'status_code' => $response->getStatusCode(),
+            'status_code' => $httpStatus,
+            'api_code' => $envelope['code'] ?? null,
+            'api_message' => $envelope['message'] ?? null,
+            'outcome' => $httpStatus >= 400 || ($envelope['success'] ?? true) === false
+                ? 'error'
+                : 'success',
+            'validation_failed' => $httpStatus === 422 ? true : null,
             'duration_ms' => $this->durationMs($startedAt),
-        ], static fn ($value) => $value !== null && $value !== ''));
+        ], static fn ($value) => $value !== null && $value !== '');
+
+        Log::info('API_RESPONSE', $responseLog);
+        if ($httpStatus >= 500) {
+            Log::error('API_RESPONSE_ERROR', $responseLog);
+        } elseif ($httpStatus >= 400) {
+            Log::warning('API_RESPONSE_FAILURE', $responseLog);
+        }
 
         return $response;
     }
@@ -156,6 +175,46 @@ class ApiRequestId
         }
 
         return null;
+    }
+
+    private function operation(Request $request, ?string $authAction): string
+    {
+        if ($authAction !== null) {
+            return $authAction;
+        }
+
+        $routeName = trim((string) ($request->route()?->getName() ?? ''));
+        if ($routeName !== '') {
+            return $routeName;
+        }
+
+        return strtolower($request->method()).':'.trim($request->path(), '/');
+    }
+
+    private function responseEnvelope(Response $response): array
+    {
+        $contentType = strtolower((string) $response->headers->get('Content-Type'));
+        if (!str_contains($contentType, 'json')) {
+            return [];
+        }
+
+        $decoded = json_decode((string) $response->getContent(), true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $success = $decoded['success'] ?? $decoded['status'] ?? null;
+        if (is_numeric($success)) {
+            $success = ((int) $success) !== 0;
+        }
+
+        return array_filter([
+            'success' => is_bool($success) ? $success : null,
+            'code' => isset($decoded['code']) ? Str::limit((string) $decoded['code'], 120) : null,
+            'message' => isset($decoded['message'])
+                ? Str::limit(strip_tags((string) $decoded['message']), 300)
+                : null,
+        ], static fn ($value) => $value !== null && $value !== '');
     }
 
     private function durationMs(int $startedAt): float

@@ -394,7 +394,7 @@ class OrderController extends Controller
         } catch (ValidationException $e) {
             return $this->errorResponse($e->getMessage(), 422);
         } catch (\Exception $e) {
-            return $this->errorResponse($e->getMessage(), 500);
+            return $this->errorResponse('Something went wrong while processing your request. Please try again.', 500);
         }
 
         if (!$order) {
@@ -507,7 +507,7 @@ class OrderController extends Controller
         try {
             $order = $service->create($orderData, $request);
         } catch (\Exception $e) {
-            return $this->errorResponse($e->getMessage(), 500);
+            return $this->errorResponse('Something went wrong while processing your request. Please try again.', 500);
         }
 
         if (!$order) {

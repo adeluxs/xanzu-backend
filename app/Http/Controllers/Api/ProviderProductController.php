@@ -159,7 +159,7 @@ class ProviderProductController extends Controller
         } catch (InvalidArgumentException $e) {
             return $this->errorResponse($e->getMessage(), 422);
         } catch (RuntimeException $e) {
-            return $this->errorResponse($e->getMessage(), 502);
+            return $this->errorResponse('Something went wrong while processing your request. Please try again.', 502);
         }
     }
 
@@ -296,7 +296,7 @@ class ProviderProductController extends Controller
         } catch (InvalidArgumentException $e) {
             return $this->errorResponse($e->getMessage(), 422);
         } catch (RuntimeException $e) {
-            return $this->errorResponse($e->getMessage(), 502);
+            return $this->errorResponse('Something went wrong while processing your request. Please try again.', 502);
         }
     }
 

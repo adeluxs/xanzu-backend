@@ -114,7 +114,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 $status === 404 => 'Resource not found.',
                 $status === 405 => 'Method not allowed.',
                 $status === 429 => 'Too many requests. Please try again shortly.',
-                $status >= 500 && !config('app.debug') => 'Something went wrong. Please try again.',
+                $status >= 500 => 'Something went wrong while processing your request. Please try again.',
                 trim($e->getMessage()) !== '' => $e->getMessage(),
                 default => 'Request failed.',
             };
