@@ -121,7 +121,18 @@ class User extends Authenticatable implements CanUseTickets, MustVerifyEmail
     protected function avatarPath(): Attribute
     {
         return Attribute::make(get: function () {
-            return $this->avatar != null && file_exists(base_path('assets/' . $this->avatar)) ? asset($this->avatar) : self::getDefaultAvatar();
+            if (empty($this->avatar)) {
+                return self::getDefaultAvatar();
+            }
+
+            $relativePath = ltrim((string) $this->avatar, '/');
+            if (Str::startsWith($relativePath, 'assets/')) {
+                $relativePath = Str::after($relativePath, 'assets/');
+            }
+
+            return file_exists(base_path('assets/' . $relativePath))
+                ? asset('assets/' . $relativePath)
+                : self::getDefaultAvatar();
         });
     }
 

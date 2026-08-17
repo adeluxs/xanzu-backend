@@ -22,50 +22,114 @@ class ApiRequestId
 
         $authAction = $this->authAction($request);
         $startedAt = hrtime(true);
+        $fileMeta = $this->fileMetadata($request);
 
-        if ($authAction !== null) {
-            Log::info('MOBILE AUTH HTTP REQUEST', [
-                'request_id' => $requestId,
-                'auth_action' => $authAction,
-                'method' => $request->method(),
-                'path' => $request->path(),
-                'mobile_client' => $request->header('X-Mobile-Client'),
-                'accepts_json' => $request->expectsJson(),
-                'has_identifier' => $request->filled('email'),
-                'has_password' => $request->filled('password'),
-                'has_phone' => $request->filled('phone'),
-                'has_otp' => $request->filled('otp'),
-                'has_otp_id' => $request->filled('otp_id'),
-                'ip' => $request->ip(),
-            ]);
-        }
+        Log::info('API_REQUEST', array_filter([
+            'request_id' => $requestId,
+            'method' => $request->method(),
+            'path' => $request->path(),
+            'route' => $request->route()?->uri(),
+            'auth_action' => $authAction,
+            'mobile_client' => $request->header('X-Mobile-Client'),
+            'accepts_json' => $request->expectsJson(),
+            'content_type' => $request->header('Content-Type'),
+            'input_fields' => $this->safeInputFields($request),
+            'files' => $fileMeta,
+            'ip' => $request->ip(),
+        ], static fn ($value) => $value !== null && $value !== [] && $value !== ''));
 
         try {
             $response = $next($request);
         } catch (Throwable $throwable) {
-            if ($authAction !== null) {
-                Log::error('MOBILE AUTH HTTP EXCEPTION', [
-                    'request_id' => $requestId,
-                    'auth_action' => $authAction,
-                    'exception_type' => get_class($throwable),
-                    'duration_ms' => $this->durationMs($startedAt),
-                ]);
-            }
+            Log::error('API_ERROR', [
+                'request_id' => $requestId,
+                'method' => $request->method(),
+                'path' => $request->path(),
+                'route' => $request->route()?->uri(),
+                'auth_action' => $authAction,
+                'user_id' => $this->userId($request),
+                'exception_type' => get_class($throwable),
+                'exception_message' => Str::limit($throwable->getMessage(), 1000),
+                'duration_ms' => $this->durationMs($startedAt),
+            ]);
+
             throw $throwable;
         }
 
         $response->headers->set('X-Request-ID', $requestId);
 
-        if ($authAction !== null) {
-            Log::info('MOBILE AUTH HTTP RESPONSE', [
-                'request_id' => $requestId,
-                'auth_action' => $authAction,
-                'status_code' => $response->getStatusCode(),
-                'duration_ms' => $this->durationMs($startedAt),
-            ]);
-        }
+        Log::info('API_RESPONSE', array_filter([
+            'request_id' => $requestId,
+            'method' => $request->method(),
+            'path' => $request->path(),
+            'route' => $request->route()?->uri(),
+            'auth_action' => $authAction,
+            'user_id' => $this->userId($request),
+            'status_code' => $response->getStatusCode(),
+            'duration_ms' => $this->durationMs($startedAt),
+        ], static fn ($value) => $value !== null && $value !== ''));
 
         return $response;
+    }
+
+    private function safeInputFields(Request $request): array
+    {
+        $sensitive = [
+            'password',
+            'password_confirmation',
+            'current_password',
+            'one_time_password',
+            'otp',
+            'otp_id',
+            'code',
+            'token',
+            'access_token',
+            'secret',
+            'secret_key',
+            'private_key',
+            'api_key',
+            'card_number',
+            'cardnumber',
+            'pan',
+            'cvv',
+            'cvc',
+        ];
+
+        return array_values(array_filter(
+            array_keys($request->except($sensitive)),
+            static fn ($key) => !in_array(strtolower((string) $key), $sensitive, true)
+        ));
+    }
+
+    private function fileMetadata(Request $request): array
+    {
+        $describe = function ($value) use (&$describe) {
+            if (is_array($value)) {
+                return array_map($describe, $value);
+            }
+
+            if (!$value || !method_exists($value, 'getSize')) {
+                return null;
+            }
+
+            return [
+                'size' => $value->getSize(),
+                'mime' => $value->getClientMimeType(),
+                'valid' => $value->isValid(),
+            ];
+        };
+
+        return array_map($describe, $request->allFiles());
+    }
+
+    private function userId(Request $request): int|string|null
+    {
+        try {
+            return $request->user()?->getAuthIdentifier()
+                ?? auth('sanctum')->user()?->getAuthIdentifier();
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     private function authAction(Request $request): ?string

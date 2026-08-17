@@ -9,9 +9,11 @@ use App\Traits\ApiResponse;
 use App\Traits\ImageUpload;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Throwable;
 
 class SettingsController extends Controller
 {
@@ -31,37 +33,96 @@ class SettingsController extends Controller
     public function profileUpdate(Request $request)
     {
         $user = auth()->user();
+        $requestId = (string) $request->attributes->get('request_id');
+        $avatar = $request->file('avatar');
+
+        Log::info('MERCHANT_PROFILE_UPDATE_REQUEST', [
+            'request_id' => $requestId,
+            'user_id' => $user?->id,
+            'input_fields' => array_keys($request->except(['password', 'password_confirmation', 'otp', 'token'])),
+            'has_avatar' => $avatar !== null,
+            'avatar_size' => $avatar?->getSize(),
+            'avatar_mime' => $avatar?->getClientMimeType(),
+        ]);
+
         $validator = Validator::make($request->all(), [
             'first_name' => [Rule::requiredIf($this->isMerchantFieldRequired('first_name')), 'nullable', 'string', 'max:255'],
             'last_name' => [Rule::requiredIf($this->isMerchantFieldRequired('last_name')), 'nullable', 'string', 'max:255'],
+            'username' => ['nullable', 'string', 'max:255', Rule::unique('users', 'username')->ignore($user->id)],
             'phone' => [Rule::requiredIf($this->isMerchantFieldRequired('phone')), 'nullable', 'string', 'max:50', 'unique:users,phone,' . $user->id],
             'country' => [Rule::requiredIf($this->isMerchantFieldRequired('country')), 'nullable', 'string', 'max:255'],
-            'gender' => [Rule::requiredIf($this->isMerchantFieldRequired('gender')), 'nullable', 'in:male,female,other', 'max:255'],
+            'gender' => [Rule::requiredIf($this->isMerchantFieldRequired('gender')), 'nullable', 'in:male,female,other'],
             'date_of_birth' => 'nullable|date',
-            'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+            'address' => 'nullable|string|max:1000',
+            'city' => 'nullable|string|max:255',
+            'zip_code' => 'nullable|string|max:50',
+            'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
         ]);
 
         if ($validator->fails()) {
+            Log::warning('MERCHANT_PROFILE_UPDATE_VALIDATION_FAILED', [
+                'request_id' => $requestId,
+                'user_id' => $user?->id,
+                'error_fields' => array_keys($validator->errors()->toArray()),
+            ]);
+
             return $this->validationErrorResponse($validator->errors());
         }
 
-        if ($request->country != $user->country) {
-            // remove old dial code and add new dial code in phone number
+        $input = $validator->validated();
+        unset($input['avatar']);
+        $input['date_of_birth'] = $request->filled('date_of_birth') ? $request->date_of_birth : null;
+
+        if ($request->filled('country') && $request->country !== $user->country && $request->filled('phone')) {
             $oldDialCode = $this->getCountryDialCode($user->country);
             $newDialCode = $this->getCountryDialCode($request->country);
-            $request->merge(['phone' => str_replace($oldDialCode, $newDialCode, $request->phone)]);
+            if ($oldDialCode && $newDialCode) {
+                $input['phone'] = str_replace($oldDialCode, $newDialCode, (string) $request->phone);
+            }
         }
 
-        $input = $request->all();
-        $input['date_of_birth'] = empty($request->date_of_birth) ? null : $request->date_of_birth;
+        $oldAvatar = $user->avatar;
+        $newAvatarPath = null;
 
-        if ($request->hasFile('avatar')) {
-            $input['avatar'] = self::imageUploadTrait($request->avatar, $user->avatar);
+        try {
+            if ($avatar !== null) {
+                $newAvatarPath = self::imageUploadTrait($avatar, null);
+                $input['avatar'] = $newAvatarPath;
+
+                Log::info('MERCHANT_PROFILE_UPDATE_FILE_STORED', [
+                    'request_id' => $requestId,
+                    'user_id' => $user->id,
+                    'stored_avatar' => $newAvatarPath,
+                ]);
+            }
+
+            $user->update($input);
+
+            if ($newAvatarPath !== null && $oldAvatar && $oldAvatar !== $newAvatarPath) {
+                $this->delete($oldAvatar);
+            }
+
+            Log::info('MERCHANT_PROFILE_UPDATE_SUCCESS', [
+                'request_id' => $requestId,
+                'user_id' => $user->id,
+                'avatar_updated' => $newAvatarPath !== null,
+            ]);
+
+            return $this->successWithoutDataResponse(__('Profile updated successfully'));
+        } catch (Throwable $throwable) {
+            if ($newAvatarPath !== null) {
+                $this->delete($newAvatarPath);
+            }
+
+            Log::error('MERCHANT_PROFILE_UPDATE_ERROR', [
+                'request_id' => $requestId,
+                'user_id' => $user?->id,
+                'exception_type' => get_class($throwable),
+                'exception_message' => $throwable->getMessage(),
+            ]);
+
+            throw $throwable;
         }
-
-        $user->update($input);
-
-        return $this->successWithoutDataResponse(__('Profile updated successfully'));
     }
 
     public function twoFa(Request $request)

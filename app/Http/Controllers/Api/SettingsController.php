@@ -9,8 +9,10 @@ use App\Traits\ApiResponse;
 use App\Traits\ImageUpload;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Throwable;
 
 class SettingsController extends Controller
 {
@@ -19,29 +21,88 @@ class SettingsController extends Controller
     public function profileUpdate(Request $request)
     {
         $user = auth()->user();
+        $requestId = (string) $request->attributes->get('request_id');
+        $avatar = $request->file('avatar');
+
+        Log::info('USER_PROFILE_UPDATE_REQUEST', [
+            'request_id' => $requestId,
+            'user_id' => $user?->id,
+            'input_fields' => array_keys($request->except(['password', 'password_confirmation', 'otp', 'token'])),
+            'has_avatar' => $avatar !== null,
+            'avatar_size' => $avatar?->getSize(),
+            'avatar_mime' => $avatar?->getClientMimeType(),
+        ]);
+
         $validator = Validator::make($request->all(), [
-            'first_name' => 'required',
-            'last_name' => 'required',
-            'username' => ['required', Rule::unique('users', 'username')->ignore(auth()->id())],
-            'gender' => 'required',
-            'date_of_birth' => 'date',
-            'email' => ['required', 'email', Rule::unique('users', 'email')->ignore(auth()->id())],
-            'phone' => ['required', Rule::unique('users', 'phone')->ignore(auth()->id())],
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'username' => ['required', 'string', 'max:255', Rule::unique('users', 'username')->ignore($user->id)],
+            'gender' => 'required|string|max:50',
+            'date_of_birth' => 'nullable|date',
+            'email' => ['required', 'email', Rule::unique('users', 'email')->ignore($user->id)],
+            'phone' => ['required', 'string', 'max:50', Rule::unique('users', 'phone')->ignore($user->id)],
+            'country' => 'nullable|string|max:255',
+            'city' => 'nullable|string|max:255',
+            'address' => 'nullable|string|max:1000',
+            'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
         ]);
 
         if ($validator->fails()) {
+            Log::warning('USER_PROFILE_UPDATE_VALIDATION_FAILED', [
+                'request_id' => $requestId,
+                'user_id' => $user?->id,
+                'error_fields' => array_keys($validator->errors()->toArray()),
+            ]);
+
             return $this->validationErrorResponse($validator->errors());
         }
 
-        $input = $request->all();
+        $input = $validator->validated();
+        unset($input['avatar']);
+        $input['date_of_birth'] = $request->filled('date_of_birth') ? $request->date_of_birth : null;
 
-        if ($request->hasFile('avatar')) {
-            $input['avatar'] = self::imageUploadTrait($request->avatar, $user->avatar);
+        $oldAvatar = $user->avatar;
+        $newAvatarPath = null;
+
+        try {
+            if ($avatar !== null) {
+                $newAvatarPath = self::imageUploadTrait($avatar, null);
+                $input['avatar'] = $newAvatarPath;
+
+                Log::info('USER_PROFILE_UPDATE_FILE_STORED', [
+                    'request_id' => $requestId,
+                    'user_id' => $user->id,
+                    'stored_avatar' => $newAvatarPath,
+                ]);
+            }
+
+            $user->update($input);
+
+            if ($newAvatarPath !== null && $oldAvatar && $oldAvatar !== $newAvatarPath) {
+                $this->delete($oldAvatar);
+            }
+
+            Log::info('USER_PROFILE_UPDATE_SUCCESS', [
+                'request_id' => $requestId,
+                'user_id' => $user->id,
+                'avatar_updated' => $newAvatarPath !== null,
+            ]);
+
+            return $this->successWithoutDataResponse(__('Profile updated successfully'));
+        } catch (Throwable $throwable) {
+            if ($newAvatarPath !== null) {
+                $this->delete($newAvatarPath);
+            }
+
+            Log::error('USER_PROFILE_UPDATE_ERROR', [
+                'request_id' => $requestId,
+                'user_id' => $user?->id,
+                'exception_type' => get_class($throwable),
+                'exception_message' => $throwable->getMessage(),
+            ]);
+
+            throw $throwable;
         }
-
-        $user->update($input);
-
-        return $this->successWithoutDataResponse(__('Profile updated successfully'));
     }
 
     public function twoFa(Request $request, $type)

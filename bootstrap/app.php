@@ -82,23 +82,65 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->renderable(function (Throwable $e) {
             $request = request();
-            if ($request->expectsJson()) {
-                if ($e instanceof ValidationException) {
-                    return app(ApiResponseService::class)->validationErrorResponse($e->validator->errors());
-                } elseif // unauthorized
-                ($e instanceof \Illuminate\Auth\AuthenticationException) {
-                    return response()->json([
-                        'success' => false,
-                        'status' => false,
-                        'message' => 'Unauthenticated.',
-                        'code' => 'UNAUTHORIZED',
-                        'data' => null,
-                        'errors' => null,
-                        'status_code' => 401,
-                        'request_id' => $request->attributes->get('request_id'),
-                    ], 401);
-                }
+            $isApiRequest = $request->is('api/*') || $request->expectsJson();
+
+            if (!$isApiRequest) {
+                return null;
             }
+
+            if ($e instanceof ValidationException) {
+                return app(ApiResponseService::class)->validationErrorResponse($e->validator->errors());
+            }
+
+            if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+                return response()->json([
+                    'success' => false,
+                    'status' => false,
+                    'message' => 'Unauthenticated.',
+                    'code' => 'UNAUTHORIZED',
+                    'data' => null,
+                    'errors' => null,
+                    'status_code' => 401,
+                    'request_id' => $request->attributes->get('request_id'),
+                ], 401);
+            }
+
+            $status = $e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface
+                ? $e->getStatusCode()
+                : 500;
+
+            $message = match (true) {
+                $status === 403 && trim($e->getMessage()) !== '' => $e->getMessage(),
+                $status === 404 => 'Resource not found.',
+                $status === 405 => 'Method not allowed.',
+                $status === 429 => 'Too many requests. Please try again shortly.',
+                $status >= 500 && !config('app.debug') => 'Something went wrong. Please try again.',
+                trim($e->getMessage()) !== '' => $e->getMessage(),
+                default => 'Request failed.',
+            };
+
+            $code = match ($status) {
+                400 => 'BAD_REQUEST',
+                401 => 'UNAUTHORIZED',
+                403 => 'FORBIDDEN',
+                404 => 'NOT_FOUND',
+                405 => 'METHOD_NOT_ALLOWED',
+                409 => 'CONFLICT',
+                422 => 'VALIDATION_FAILED',
+                429 => 'RATE_LIMITED',
+                default => $status >= 500 ? 'SERVER_ERROR' : 'REQUEST_FAILED',
+            };
+
+            return response()->json([
+                'success' => false,
+                'status' => false,
+                'message' => $message,
+                'code' => $code,
+                'data' => null,
+                'errors' => null,
+                'status_code' => $status,
+                'request_id' => $request->attributes->get('request_id'),
+            ], $status);
         });
     })
     ->create();
