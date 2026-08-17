@@ -62,7 +62,7 @@ class ViewServiceProvider extends ServiceProvider
                             ->get();
                     }),
                     'categories' => cache()->remember('categories.active', 60 * 60, function () {
-                        return Category::select(['id', 'name', 'image', 'slug'])->isCategory()->active()->orderBy('order')->get();
+                        return Category::select(['categories.id', 'categories.name', 'categories.image', 'categories.slug'])->isCategory()->active()->orderBy('order')->get();
                     }),
                     'firstOrderBonus' => auth()->check() ? cache()->remember('first_order_bonus.' . auth()->id(), 60 * 5, function () {
                         return ! auth()->user()->transaction()->where('type', TxnType::ProductOrder)->exists();
@@ -133,7 +133,7 @@ class ViewServiceProvider extends ServiceProvider
                             $query->where('sender_id', $authUser)->orWhere('receiver_id', $authUser);
                         })
 
-                        ->select('sender_id', 'receiver_id', 'created_at', 'message', 'id', 'seen')
+                        ->select('chats.sender_id', 'chats.receiver_id', 'chats.created_at', 'chats.message', 'chats.id', 'chats.seen')
                         ->latest()
                         // The header only renders recent conversations. Do not load a
                         // user's complete chat history on every page request.

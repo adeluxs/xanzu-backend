@@ -36,7 +36,7 @@ class ThemeController extends Controller
 
         if ($status) {
             $query = Theme::where('type', $theme->type)->where('status', true);
-            $oldStatus = $query->pluck('id')->toArray();
+            $oldStatus = $query->pluck('themes.id')->toArray();
             $query->update([
                 'status' => 0,
             ]);
@@ -134,7 +134,7 @@ class ThemeController extends Controller
 
         if ($status) {
             $query = Theme::where('type', 'landing')->where('status', true);
-            $oldStatus = $query->pluck('id')->toArray();
+            $oldStatus = $query->pluck('themes.id')->toArray();
             $query->update([
                 'status' => 0,
             ]);

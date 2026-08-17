@@ -14,9 +14,12 @@ use App\Http\Middleware\TwoFaCheck;
 use App\Http\Middleware\UserPermissionChecker;
 use App\Http\Middleware\XSS;
 use App\Services\ApiResponseService;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
@@ -80,6 +83,21 @@ return Application::configure(basePath: dirname(__DIR__))
 
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->reportable(function (QueryException $e): void {
+            $request = request();
+
+            Log::error('DATABASE_QUERY_ERROR', array_filter([
+                'request_id' => $request->attributes->get('request_id'),
+                'method' => $request->method(),
+                'path' => $request->path(),
+                'route' => $request->route()?->uri(),
+                'sqlstate' => $e->errorInfo[0] ?? null,
+                'driver_code' => $e->errorInfo[1] ?? null,
+                // Deliberately omit bindings: they may contain sensitive data.
+                'sql' => Str::limit($e->getSql(), 2000),
+            ], static fn ($value) => $value !== null && $value !== ''));
+        });
+
         $exceptions->renderable(function (Throwable $e) {
             $request = request();
             $isApiRequest = $request->is('api/*') || $request->expectsJson();

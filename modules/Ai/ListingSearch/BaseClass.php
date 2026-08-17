@@ -45,22 +45,22 @@ class BaseClass
         $template = file_get_contents(__DIR__ . DIRECTORY_SEPARATOR . 'prompt.txt');
 
         $categories = Category::active()
-            ->select('id', 'name', 'parent_id')
-            ->orderBy('name')
+            ->select('categories.id', 'categories.name', 'categories.parent_id')
+            ->orderBy('categories.name')
             ->get()
             ->map(fn($item) => $item->id . ':' . trim((string) $item->name) . ',' . ($item->parent_id ?? 'null'))
             ->implode(PHP_EOL);
 
         $brands = Brand::where('status', 1)
-            ->select('id', 'name')
-            ->orderBy('name')
+            ->select('brands.id', 'brands.name')
+            ->orderBy('brands.name')
             ->get()
             ->map(fn($item) => $item->id . ':' . trim((string) $item->name))
             ->implode(PHP_EOL);
 
         $providers = Provider::where('status', 1)
-            ->select('id', 'name')
-            ->orderBy('name')
+            ->select('providers.id', 'providers.name')
+            ->orderBy('providers.name')
             ->get()
             ->map(fn($item) => $item->id . ':' . trim((string) $item->name))
             ->implode(PHP_EOL);

@@ -385,7 +385,7 @@ class OrderService
             }
         }
 
-        return CreditLimitSplit::query()->active()->orderBy('id')->value('id');
+        return CreditLimitSplit::query()->active()->orderBy('credit_limit_splits.id')->value('credit_limit_splits.id');
     }
 
     private function summarizeExternalItems(array $items, string $merchantOrderId = ''): string

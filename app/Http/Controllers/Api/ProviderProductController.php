@@ -223,7 +223,7 @@ class ProviderProductController extends Controller
                 ? array_values((array) $request->input('remote_product_ids', []))
                 : [$request->input('remote_product_id')];
 
-            $defaultCategoryId = Category::active()->isCategory()->value('id');
+            $defaultCategoryId = Category::active()->isCategory()->value('categories.id');
 
             if (!$defaultCategoryId && !$request->filled('category_id')) {
                 return $this->errorResponse('Please provide category_id because no active parent category exists.', 422);

@@ -195,7 +195,7 @@ class FrontendController extends Controller
             $idsToDelete = RecentSearch::orderBy('count', 'desc')
                 ->skip(10)
                 ->limit(PHP_INT_MAX)
-                ->pluck('id');
+                ->pluck('recent_searches.id');
 
             RecentSearch::whereIn('id', $idsToDelete)->delete();
 

@@ -37,7 +37,7 @@ class ReferralController extends Controller
     {
         $user = auth()->user();
         $referralUsers = $user->referrals()
-            ->select('id', 'first_name', 'avatar', 'last_name', 'status', 'email', 'created_at')
+            ->select('users.id', 'users.first_name', 'users.avatar', 'users.last_name', 'users.status', 'users.email', 'users.created_at')
             ->selectSub(
                 Transaction::query()
                     ->selectRaw('COALESCE(SUM(amount), 0)')

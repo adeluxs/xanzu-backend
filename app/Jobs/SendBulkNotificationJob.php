@@ -35,9 +35,9 @@ class SendBulkNotificationJob implements ShouldQueue
     {
         if ($this->audience === 'subscribers') {
             Subscription::query()
-                ->select(['id', 'email'])
+                ->select(['subscriptions.id', 'subscriptions.email'])
                 ->whereNotNull('email')
-                ->orderBy('id')
+                ->orderBy('subscriptions.id')
                 ->chunkById(500, function ($subscribers): void {
                     foreach ($subscribers as $subscriber) {
                         $this->sendNotify(
@@ -49,17 +49,17 @@ class SendBulkNotificationJob implements ShouldQueue
                             null,
                         );
                     }
-                });
+                }, 'subscriptions.id', 'id');
 
             return;
         }
 
         User::query()
-            ->select(['id', 'email', 'phone', 'first_name', 'last_name', 'username', 'user_type'])
+            ->select(['users.id', 'users.email', 'users.phone', 'users.first_name', 'users.last_name', 'users.username', 'users.user_type'])
             ->where('status', 1)
             ->when($this->userType && $this->userType !== 'all', fn ($query) => $query->where('user_type', $this->userType))
             ->whereNotNull('email')
-            ->orderBy('id')
+            ->orderBy('users.id')
             ->chunkById(300, function ($users): void {
                 foreach ($users as $user) {
                     $shortcodes = array_merge($this->shortcodes, [
@@ -75,6 +75,6 @@ class SendBulkNotificationJob implements ShouldQueue
                         $user->id,
                     );
                 }
-            });
+            }, 'users.id', 'id');
     }
 }

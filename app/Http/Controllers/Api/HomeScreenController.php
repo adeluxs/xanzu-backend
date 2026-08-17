@@ -429,7 +429,7 @@ class HomeScreenController extends Controller
                 'images:id,listing_id,image_path',
                 'listingAttributes' => function ($query) {
                     $query
-                        ->select('id', 'group', 'label', 'listing_id', 'qty', 'price', 'discount_type', 'final_price', 'discount_amount');
+                        ->select('listing_attributes.id', 'listing_attributes.group', 'listing_attributes.label', 'listing_attributes.listing_id', 'listing_attributes.qty', 'listing_attributes.price', 'listing_attributes.discount_type', 'listing_attributes.final_price', 'listing_attributes.discount_amount');
                 },
             ])
             ->first();

@@ -544,7 +544,7 @@ class ListingController extends Controller
 
     private function syncAttributes(Listing $listing, array $attributeGroups): void
     {
-        $existingIds = $listing->listingAttributes()->pluck('id')->toArray();
+        $existingIds = $listing->listingAttributes()->pluck('listing_attributes.id')->toArray();
         $keepIds = [];
 
         foreach ($attributeGroups as $group) {

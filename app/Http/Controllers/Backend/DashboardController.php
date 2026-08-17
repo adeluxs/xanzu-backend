@@ -186,7 +186,7 @@ class DashboardController extends Controller
                 ->toArray();
         }
 
-        $legacyQuery = LoginActivities::query()->select('id', 'agent')->whereNotNull('agent')->where('agent', '!=', '');
+        $legacyQuery = LoginActivities::query()->select('login_activities.id', 'login_activities.agent')->whereNotNull('agent')->where('agent', '!=', '');
         if ($hasColumn) {
             $legacyQuery->where(function (Builder $query) use ($attribute) {
                 $query->whereNull($attribute)->orWhere($attribute, '');

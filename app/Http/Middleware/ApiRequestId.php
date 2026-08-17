@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Closure;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -43,7 +44,7 @@ class ApiRequestId
         try {
             $response = $next($request);
         } catch (Throwable $throwable) {
-            Log::error('API_ERROR', [
+            $errorContext = [
                 'request_id' => $requestId,
                 'method' => $request->method(),
                 'path' => $request->path(),
@@ -54,7 +55,21 @@ class ApiRequestId
                 'exception_type' => get_class($throwable),
                 'exception_message' => Str::limit($throwable->getMessage(), 1000),
                 'duration_ms' => $this->durationMs($startedAt),
-            ]);
+            ];
+
+            if ($throwable instanceof QueryException) {
+                // Log the SQL template, never bindings. Bindings may contain
+                // personal or financial data and are not needed to identify
+                // ambiguous/missing columns or other structural SQL failures.
+                $errorContext['db_sqlstate'] = $throwable->errorInfo[0] ?? null;
+                $errorContext['db_driver_code'] = $throwable->errorInfo[1] ?? null;
+                $errorContext['db_sql'] = Str::limit($throwable->getSql(), 2000);
+            }
+
+            Log::error('API_ERROR', array_filter(
+                $errorContext,
+                static fn ($value) => $value !== null && $value !== ''
+            ));
 
             throw $throwable;
         }
