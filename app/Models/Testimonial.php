@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\LandingCache;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,6 +12,12 @@ class Testimonial extends Model
     use HasFactory;
 
     protected $guarded = [];
+
+    protected static function booted(): void
+    {
+        static::saved(static fn () => LandingCache::flush());
+        static::deleted(static fn () => LandingCache::flush());
+    }
 
     public function trans()
     {

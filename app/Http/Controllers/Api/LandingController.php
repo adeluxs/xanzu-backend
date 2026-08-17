@@ -11,6 +11,9 @@ use App\Models\Navigation;
 use App\Models\Page;
 use App\Models\Social;
 use App\Models\Testimonial;
+use App\Support\JsonData;
+use App\Support\LandingCache;
+use App\Support\LandingSectionDefaults;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
@@ -398,8 +401,14 @@ class LandingController extends Controller
 
     private function formatPage(LandingPage $page, Collection $contentsMap): array
     {
-        $data = json_decode($page->data, true);
-        $data = is_array($data) ? $data : [];
+        $data = JsonData::decodeArray($page->getAttribute('data'), [], [
+            'model' => 'LandingPage',
+            'record_id' => $page->id,
+            'code' => $page->code,
+            'locale' => $page->locale,
+        ]);
+        $data = LandingSectionDefaults::merge($page->code, $data);
+
         return [
             'id' => $page->id,
             'name' => $page->name,
@@ -415,8 +424,12 @@ class LandingController extends Controller
 
     private function formatContentPage(Page $page, string $locale, string $defaultLocale): array
     {
-        $data = json_decode($page->data, true);
-        $data = is_array($data) ? $data : [];
+        $data = JsonData::decodeArray($page->getAttribute('data'), [], [
+            'model' => 'Page',
+            'record_id' => $page->id,
+            'code' => $page->code,
+            'locale' => $page->locale,
+        ]);
 
         $sectionIds = $this->extractSectionIds($data);
         $sections = $this->resolveLinkedLandingSections($locale, $defaultLocale, $sectionIds);
@@ -714,6 +727,7 @@ class LandingController extends Controller
     {
         return implode(':', [
             self::CACHE_PREFIX,
+            LandingCache::version(),
             self::THEME,
             $segment,
             md5(json_encode($context)),

@@ -10,6 +10,7 @@ use App\Models\Page;
 use App\Models\PageSetting;
 use App\Models\Social;
 use App\Support\JsonData;
+use App\Support\LandingCache;
 use App\Traits\ImageUpload;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\View\Factory;
@@ -477,6 +478,7 @@ class PageController extends Controller
     {
         $id = $request->id;
         LandingContent::where('id', $id)->delete();
+        LandingCache::flush();
         notify()->success(__('Content Deleted Successfully'));
 
         return back();
@@ -559,6 +561,8 @@ class PageController extends Controller
                 'short' => $order,
             ]);
         }
+
+        LandingCache::flush();
 
         notify()->success(__('Section order updated successfully!'));
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Backend;
 use App\Http\Controllers\Controller;
 use App\Models\LandingContent;
 use App\Models\LandingPage;
+use App\Support\LandingCache;
 use App\Models\Language;
 use App\Models\Page;
 use App\Services\TranslationService;
@@ -221,6 +222,7 @@ class LanguageController extends Controller
         LandingPage::where('locale', $language->locale)->delete();
         LandingContent::where('locale', $language->locale)->delete();
         Page::where('locale', $language->locale)->delete();
+        LandingCache::flush();
 
         $language->delete();
 
