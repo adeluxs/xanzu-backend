@@ -25,8 +25,10 @@ use Illuminate\Contracts\View\Factory;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -279,7 +281,8 @@ class UserController extends Controller
     {
         $input = $request->all();
 
-        $user = User::find($id);
+        $user = User::findOrFail($id);
+        $transferStatusBefore = (bool) $user->transfer_status;
         $validator = Validator::make($input, [
             'status' => ['required'],
             'email_verified' => ['required'],
@@ -287,6 +290,7 @@ class UserController extends Controller
             'two_fa' => ['required'],
             'deposit_status' => ['nullable'],
             'withdraw_status' => ['required'],
+            'transfer_status' => ['required', 'boolean'],
             'otp_status' => ['nullable'],
             'card_status' => ['nullable'],
             'user_type' => ['nullable'],
@@ -305,6 +309,7 @@ class UserController extends Controller
             'two_fa' => $input['two_fa'],
             'deposit_status' => $input['deposit_status'] ?? $user->deposit_status,
             'withdraw_status' => $input['withdraw_status'],
+            'transfer_status' => $input['transfer_status'],
             'otp_status' => $input['otp_status'] ?? $user->otp_status,
             'card_status' => $input['card_status'] ?? $user->card_status,
             'email_verified_at' => $input['email_verified'] == 1 ? now() : null,
@@ -323,7 +328,17 @@ class UserController extends Controller
             $this->sendNotify($user->email, 'user_account_disabled', 'User', $shortcodes, $user->phone, $user->id);
         }
 
-        User::find($id)->update($data);
+        $user->update($data);
+
+        if ($transferStatusBefore !== (bool) $user->transfer_status) {
+            Log::notice('USER_TRANSFER_STATUS_CHANGED', [
+                'admin_id' => auth('admin')->id(),
+                'user_id' => $user->id,
+                'user_type' => $user->user_type,
+                'before' => $transferStatusBefore,
+                'after' => (bool) $user->transfer_status,
+            ]);
+        }
 
         if ($user->wasChanged('kyc')) {
             $oldLocal = KYCStatus::tryFrom($user->getOriginal('kyc'));
@@ -412,6 +427,13 @@ class UserController extends Controller
             'two_fa' => 0,
             'deposit_status' => 1,
             'withdraw_status' => 1,
+            'transfer_status' => setting_enabled(
+                $request->user_type === 'merchant'
+                    ? 'transfer_default_merchant'
+                    : 'transfer_default_buyer',
+                'transfer',
+                true
+            ),
             'otp_status' => 0,
             'referral_status' => 1,
             'email_verified_at' => now(),
@@ -455,7 +477,7 @@ class UserController extends Controller
             foreach ($kycs as $id => $kyc) {
                 if (is_array($kyc)) {
                     foreach ($kyc as $key => $value) {
-                        if (is_file($value)) {
+                        if ($value instanceof UploadedFile) {
                             $kycs[$id][$key] = self::imageUploadTrait($value);
                         }
                     }

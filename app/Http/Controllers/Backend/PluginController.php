@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Backend;
 
 use App\Http\Controllers\Controller;
 use App\Models\Plugin;
+use App\Support\JsonData;
 use App\Traits\ImageUpload;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -55,7 +56,7 @@ class PluginController extends Controller
         DB::beginTransaction();
 
         try {
-            $plugin = Plugin::find($id);
+            $plugin = Plugin::findOrFail($id);
             $status = (bool) $request->status;
 
             if ($plugin->type == 'sms' && $status) {
@@ -65,7 +66,7 @@ class PluginController extends Controller
             }
 
 
-            $pluginOldData = json_decode($plugin->data, true);
+            $pluginOldData = JsonData::decodeArray($plugin->data);
             $requestData = $request->data;
 
             if ($request->hasFile('data.upload_account_json')) {

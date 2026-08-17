@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\LoginActivities;
 use App\Providers\RouteServiceProvider;
+use App\Support\JsonData;
 use App\Traits\NotifyTrait;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,7 +26,7 @@ class AuthenticatedSessionController extends Controller
     {
 
         $page = getPageData('login');
-        $data = json_decode($page->data, true);
+        $data = JsonData::decodeArray($page?->data);
 
         return view('frontend::auth.login', compact('data'));
     }
@@ -41,8 +42,9 @@ class AuthenticatedSessionController extends Controller
 
         $request->authenticate();
         $request->session()->regenerate();
+        $user = Auth::user();
+
         if (setting('otp_verification', 'permission')) {
-            $user = Auth::user();
             $otp = random_int(1000, 9999);
             $shortcodes = [
                 '[[otp_code]]' => $otp,

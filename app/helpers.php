@@ -798,7 +798,7 @@ if (!function_exists('processManualDepositData')) {
         if ($request->$field != null && is_array($request->$field)) {
             $manualData = $request->$field ?? [];
             foreach ($manualData as $key => $value) {
-                if (is_file($value)) {
+                if ($value instanceof \Illuminate\Http\UploadedFile) {
                     $manualData[$key] = orderService()->imageUploadTrait($value);
                 }
             }

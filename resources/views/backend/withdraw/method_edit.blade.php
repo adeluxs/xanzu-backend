@@ -45,7 +45,7 @@
                                         <label class="box-input-label"
                                             for="">{{ __('Gateway Supported Currency:') }}</label>
                                         <select name="currency" class="form-select" id="currency">
-                                            @foreach (json_decode($supported_currencies) as $currency)
+                                            @foreach ((array) json_decode((string) $supported_currencies) as $currency)
                                                 <option value="{{ $currency }}" @selected($currency == $withdrawMethod->currency)>
                                                     {{ $currency }} </option>
                                             @endforeach
@@ -161,7 +161,7 @@
                                 </div>
 
                                 <div class="addOptions">
-                                    @foreach (json_decode($withdrawMethod->fields, true) as $key => $value)
+                                    @foreach (\App\Support\JsonData::decodeArray($withdrawMethod->fields) as $key => $value)
                                         <div class="mb-4">
                                             <div class="option-remove-row row">
                                                 <div class="col-xl-4 col-lg-6 col-md-6 col-sm-6 col-12">

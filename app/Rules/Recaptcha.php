@@ -2,6 +2,7 @@
 
 namespace App\Rules;
 
+use App\Support\JsonData;
 use Exception;
 use Illuminate\Contracts\Validation\Rule;
 
@@ -26,8 +27,19 @@ class Recaptcha implements Rule
      */
     public function passes($attribute, $value)
     {
+        $plugin = plugin_active('Google reCaptcha');
+        if (! $plugin) {
+            return true;
+        }
+
+        $credentials = JsonData::decodeArray($plugin->data);
+        $secret = (string) ($credentials['secret_key'] ?? '');
+        if ($secret === '') {
+            return false;
+        }
+
         $data = [
-            'secret' => json_decode(plugin_active('Google reCaptcha')?->data)->secret_key,
+            'secret' => $secret,
             'response' => $value,
         ];
 
@@ -47,8 +59,9 @@ class Recaptcha implements Rule
             curl_setopt($verify, CURLOPT_SSL_VERIFYPEER, false);
             curl_setopt($verify, CURLOPT_RETURNTRANSFER, true);
             $response = curl_exec($verify);
+            $responseData = JsonData::decodeArray($response);
 
-            return json_decode($response)->success;
+            return (bool) ($responseData['success'] ?? false);
         } catch (Exception $e) {
             return false;
         }

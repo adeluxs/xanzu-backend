@@ -75,7 +75,7 @@
                                         <textarea name="sms_body" class="form-textarea" cols="30" rows="8">{{ br2nl($template->sms_body) }}</textarea>
                                         <p class="paragraph mb-0 mt-2"><i
                                                 data-lucide="alert-triangle"></i>{{ __('The Shortcuts you can use') }}
-                                            <strong>{{ implode(', ', json_decode($template->short_codes)) }}</strong>
+                                            <strong>{{ implode(', ', \App\Support\JsonData::decodeArray($template->short_codes)) }}</strong>
                                         </p>
                                     </div>
                                 </div>
@@ -115,7 +115,7 @@
                                         <textarea name="notification_body" class="form-textarea" cols="30" rows="8">{{ br2nl($template->notification_body) }}</textarea>
                                         <p class="paragraph mb-0 mt-2"><i
                                                 data-lucide="alert-triangle"></i>{{ __('The Shortcuts you can use') }}
-                                            <strong>{{ implode(', ', json_decode($template->short_codes)) }}</strong>
+                                            <strong>{{ implode(', ', \App\Support\JsonData::decodeArray($template->short_codes)) }}</strong>
                                         </p>
                                     </div>
                                 </div>
@@ -190,7 +190,7 @@
                                         <textarea name="email_body" class="form-textarea" cols="30" rows="8">{{ br2nl($template->email_body) }}</textarea>
                                         <p class="paragraph mb-0 mt-2"><i
                                                 data-lucide="alert-triangle"></i>{{ __('The Shortcuts you can use') }}
-                                            <strong>{{ implode(', ', json_decode($template->short_codes)) }}</strong>
+                                            <strong>{{ implode(', ', \App\Support\JsonData::decodeArray($template->short_codes)) }}</strong>
                                         </p>
                                     </div>
                                 </div>

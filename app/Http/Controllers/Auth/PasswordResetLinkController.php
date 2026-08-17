@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Support\JsonData;
 use App\Traits\NotifyTrait;
 use DB;
 use Illuminate\Http\RedirectResponse;
@@ -25,7 +26,7 @@ class PasswordResetLinkController extends Controller
     public function create()
     {
         $page = getPageData('forgetpassword');
-        $data = json_decode($page->data, true);
+        $data = JsonData::decodeArray($page?->data);
 
         return view('frontend::auth.forgot-password', compact('data'));
     }

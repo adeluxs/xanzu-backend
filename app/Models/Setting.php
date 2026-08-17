@@ -227,8 +227,17 @@ class Setting extends Model
 
             case 'bool':
             case 'boolean':
-                return boolval($val);
-                break;
+                if (is_bool($val)) {
+                    return $val;
+                }
+
+                if (is_int($val) || is_float($val)) {
+                    return (int) $val === 1;
+                }
+
+                return in_array(strtolower(trim((string) $val)), [
+                    '1', 'true', 'yes', 'on', 'enabled', 'active',
+                ], true);
 
             default:
                 return $val;

@@ -136,7 +136,7 @@ class BlogController extends Controller
             'details' => $input['details'],
         ];
 
-        if (isset($input['cover']) && is_file($input['cover'])) {
+        if ($request->hasFile('cover')) {
             $data['cover'] = self::imageUploadTrait($input['cover'], $blog->cover);
         }
 

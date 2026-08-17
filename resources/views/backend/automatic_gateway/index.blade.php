@@ -48,7 +48,7 @@
                                         <img height="25" src="{{  asset($gateway->logo) }}" alt="">
                                     </td>
                                     <td>{{ $gateway->name }}</td>
-                                    <td> {{ count(json_decode($gateway->supported_currencies,true)) }}</td>
+                                    <td>{{ count(\App\Support\JsonData::decodeArray($gateway->supported_currencies)) }}</td>
                                     <td>
                                         @if($gateway->is_withdraw != 0)
                                             <div class="site-badge success"> {{ __('Yes') }}</div>

@@ -9,6 +9,7 @@ use App\Models\DeliveryItem;
 use App\Models\Listing;
 use App\Models\ListingGallery;
 use App\Models\Order;
+use App\Support\JsonData;
 use App\Traits\ImageUpload;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -369,7 +370,7 @@ class ListingController extends Controller
         $reviews = $listing->approvedReviews()->get();
 
         // add browsing history cookie
-        $browsingHistory = json_decode($request->cookie('browsing_history', '[]'), true);
+        $browsingHistory = JsonData::decodeArray($request->cookie('browsing_history', '[]'));
         if (! in_array($listing->id, $browsingHistory)) {
             array_unshift($browsingHistory, $listing->id);
             if (count($browsingHistory) > 20) {

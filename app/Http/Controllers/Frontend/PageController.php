@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Blog;
 use App\Models\Page;
 use App\Rules\Recaptcha;
+use App\Support\JsonData;
 use App\Traits\NotifyTrait;
 use Exception;
 use Illuminate\Http\Request;
@@ -26,8 +27,6 @@ class PageController extends Controller
         if (!$page) {
             $page = Page::where('url', $url)->where('locale', defaultLocale())->where('theme', site_theme())->firstOrFail();
         }
-
-        $data = new Fluent(json_decode($page->data, true));
 
         return redirect()->away(config('app.frontend_url') . '/' . $page->url);
 
@@ -82,10 +81,10 @@ class PageController extends Controller
 
         $page = Page::where('code', 'blog')->where('locale', app()->getLocale())->first();
         if (!$page) {
-            $page = Page::where('code', 'blog')->where('locale', defaultLocale())->first();
+            $page = Page::where('code', 'blog')->where('locale', defaultLocale())->firstOrFail();
         }
 
-        $data = new Fluent(json_decode($page->data, true));
+        $data = new Fluent(JsonData::decodeArray($page->data));
 
         return view('frontend::pages.blog_details', compact('blog', 'blogs', 'data', 'popularBlog'));
     }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\Page;
 use App\Models\User;
+use App\Support\JsonData;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +29,7 @@ class NewPasswordController extends Controller
         if (! $page) {
             $page = Page::where('code', 'forgetpassword')->where('locale', defaultLocale())->where('theme', site_theme())->firstOrFail();
         }
-        $data = new Fluent(json_decode($page->data, true));
+        $data = new Fluent(JsonData::decodeArray($page->data));
 
         return view('frontend::auth.reset-password', compact('request', 'data'));
 

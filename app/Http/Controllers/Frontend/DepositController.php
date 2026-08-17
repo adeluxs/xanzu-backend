@@ -8,6 +8,7 @@ use App\Models\DepositMethod;
 use App\Traits\ImageUpload;
 use App\Traits\NotifyTrait;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Txn;
@@ -93,7 +94,7 @@ class DepositController extends GatewayController
 
             foreach ($manualData as $key => $value) {
 
-                if (is_file($value)) {
+                if ($value instanceof UploadedFile) {
                     $manualData[$key] = self::imageUploadTrait($value);
                 }
             }

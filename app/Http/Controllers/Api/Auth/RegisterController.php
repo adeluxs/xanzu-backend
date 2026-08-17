@@ -131,9 +131,7 @@ class RegisterController extends Controller
                     'email' => Str::lower(trim((string) $request->email)),
                     'password' => Hash::make((string) $request->password),
                     'user_type' => 'buyer',
-                    'transfer_status' => value_is_enabled(
-                        setting('transfer_default_buyer', 'transfer', true)
-                    ),
+                    'transfer_status' => setting_enabled('transfer_default_buyer', 'transfer', true),
                     'country' => $countryName,
                     'phone' => $phone,
                     'phone_verified_at' => $phoneOtp ? now() : null,

@@ -9,14 +9,17 @@ use App\Models\Language;
 use App\Models\Page;
 use App\Models\PageSetting;
 use App\Models\Social;
+use App\Support\JsonData;
 use App\Traits\ImageUpload;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\View\Factory;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -93,7 +96,7 @@ class PageController extends Controller
      */
     public function create()
     {
-        $landingSections = Cache::get('landingSections');
+        $landingSections = Cache::get('landingSections', collect());
 
         return view('backend.page.create', compact('landingSections'));
     }
@@ -105,29 +108,26 @@ class PageController extends Controller
     {
 
         $page = Page::where('code', $name)->where('theme', site_theme())->get();
-        $engPage = Page::where('code', $name)->where('theme', site_theme())->where('locale', '=', 'en')->first();
+        abort_if($page->isEmpty(), 404);
 
-        $status = $engPage->status;
+        $engPage = $page->firstWhere('locale', defaultLocale())
+            ?? $page->firstWhere('locale', 'en')
+            ?? $page->first();
+
+        $status = (bool) $engPage->status;
         $slug = $engPage->url;
-        $groupData = $page->groupBy('locale');
-
-        $groupData = $groupData->map(function ($items) {
-            $item = $items->first();
-            if ($item->type == 'dynamic') {
-                return array_merge(json_decode($items->first()->data, true), ['title' => $item->title]);
-            }
-
-            return json_decode($item->data, true);
-        })->toArray();
-
         $languages = Language::where('status', true)->get();
-        $locale = array_column($languages->toArray(), 'locale');
-        $engData = json_decode($engPage->data, true);
-        $localeKey = array_fill_keys($locale, $engData);
-        $groupData = array_merge($localeKey, $groupData);
+        $groupData = $this->localizedGroupData($page, $languages, $engPage, $engPage->type === 'dynamic');
+        $engData = $this->recordData($engPage);
 
-        $commaIds = isset($engData['section_id']) ? implode(',', json_decode($engData['section_id'])) : '';
-        $landingSections = LandingPage::where('code', '!=', 'footer')->where('theme', site_theme())->where('locale', 'en')->when(isset($engData['section_id']) && json_decode($engData['section_id']), function ($query) use ($commaIds) {
+        $sectionIds = collect(JsonData::decodeArray($engData['section_id'] ?? []))
+            ->filter(fn ($id) => is_numeric($id) && (int) $id > 0)
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+        $commaIds = $sectionIds->implode(',');
+
+        $landingSections = LandingPage::where('code', '!=', 'footer')->where('theme', site_theme())->where('locale', 'en')->when($sectionIds->isNotEmpty(), function ($query) use ($commaIds) {
             $query->orderByRaw("FIELD(id, $commaIds)");
         })->get();
 
@@ -138,7 +138,7 @@ class PageController extends Controller
             return view('backend.page.edit', compact('landingSections', 'title', 'groupData', 'status', 'code', 'languages'));
         }
 
-        $landingContent = LandingContent::where('type', $name)->where('locale', 'en')->get();
+        $landingContent = LandingContent::where('type', $name)->where('theme', site_theme())->where('locale', 'en')->get();
 
         return view('backend.page.'.site_theme().'.'.$name, compact('status', 'landingSections', 'slug', 'groupData', 'languages', 'landingContent'));
 
@@ -149,12 +149,17 @@ class PageController extends Controller
      */
     public function update(Request $request)
     {
+        $request->validate([
+            'page_code' => ['required', 'string'],
+            'page_locale' => ['required', 'string'],
+        ]);
+
         $input = $request->all();
         $content = $request->except(['page_code', 'status', '_token', 'page_locale']);
         $pageCode = $input['page_code'];
         $pageLocale = $input['page_locale'];
 
-        $engPage = Page::where('code', $pageCode)->where('theme', site_theme())->where('locale', defaultLocale())->first();
+        $engPage = Page::where('code', $pageCode)->where('theme', site_theme())->where('locale', defaultLocale())->firstOrFail();
         $page = Page::where('code', $pageCode)->where('theme', site_theme())->where('locale', $pageLocale)->first();
         if (! $page) {
             $page = $engPage->replicate();
@@ -171,7 +176,7 @@ class PageController extends Controller
             ];
 
             if ($pageLocale != 'en') {
-                $engOldData = json_decode($engPage->data, true);
+                $engOldData = $this->recordData($engPage);
                 $content = array_merge($engOldData, $content);
             } else {
                 $content['section_id'] = json_encode($request->get('section_id', []));
@@ -181,18 +186,18 @@ class PageController extends Controller
                 'title' => $input['title'],
                 'data' => json_encode($content),
                 'theme' => site_theme(),
-                'status' => (bool) $input['status'],
+                'status' => (bool) ($input['status'] ?? $engPage->status),
             ];
 
         } else {
 
-            $oldData = json_decode($page->data, true);
-            $engOldData = json_decode($engPage->data, true);
+            $oldData = $this->recordData($page);
+            $engOldData = $this->recordData($engPage);
 
             foreach ($content as $key => $value) {
                 if (is_array($value)) {
                     $content[$key] = json_encode($value);
-                } elseif (is_file($value)) {
+                } elseif ($request->hasFile($key)) {
                     $oldValue = Arr::get($oldData, $key);
                     $content[$key] = self::imageUploadTrait($value, $oldValue);
 
@@ -210,7 +215,7 @@ class PageController extends Controller
             ];
 
             if ($pageLocale == 'en' && isset($input['status'])) {
-                Page::where('code', $pageCode)->update([
+                Page::where('code', $pageCode)->where('theme', site_theme())->update([
                     'status' => (bool) $input['status'],
                 ]);
             }
@@ -234,7 +239,7 @@ class PageController extends Controller
     public function deleteNow(Request $request)
     {
         $pageCode = $request['page_code'];
-        $page = Page::where('code', $pageCode)->delete();
+        $page = Page::where('code', $pageCode)->where('theme', site_theme())->delete();
         Cache::pull('pages');
         notify()->success(__('Deleted Successfully'));
 
@@ -249,24 +254,17 @@ class PageController extends Controller
     public function landingSection($section)
     {
         $landingPage = LandingPage::where('code', $section)->where('theme', site_theme())->get();
-        abort_if($landingPage->count() == 0, 404);
-        $engLandingPage = $landingPage->where('locale', '=', 'en')->first();
-        $status = $engLandingPage->status;
-        $groupData = $landingPage->groupBy('locale');
+        abort_if($landingPage->isEmpty(), 404);
 
-        $groupData = $groupData->map(function ($items) {
-            return json_decode($items->first()->data, true);
-        })->toArray();
+        $engLandingPage = $landingPage->firstWhere('locale', defaultLocale())
+            ?? $landingPage->firstWhere('locale', 'en')
+            ?? $landingPage->first();
+        $status = (bool) $engLandingPage->status;
 
         $languages = Language::where('status', true)->get();
+        $groupData = $this->localizedGroupData($landingPage, $languages, $engLandingPage);
 
-        $locale = array_column($languages->toArray(), 'locale');
-        $engData = json_decode($engLandingPage->data, true);
-        $localeKey = array_fill_keys($locale, $engData);
-
-        $groupData = array_merge($localeKey, $groupData);
-
-        $landingContent = LandingContent::where('type', $section)->where('locale', 'en')->get();
+        $landingContent = LandingContent::where('type', $section)->where('theme', site_theme())->where('locale', 'en')->get();
 
         return view('backend.page.'.site_theme().'.section.'.$section, compact('groupData', 'languages', 'status', 'landingContent'));
     }
@@ -276,15 +274,21 @@ class PageController extends Controller
         $input = $request->all();
 
         if ($request->ajax()) {
+            $validated = $request->validate([
+                'target_code' => ['required', 'string'],
+                'field_name' => ['required', 'string'],
+            ]);
 
-            $engLandingPage = LandingPage::where('code', $input['target_code'])->where('theme', site_theme())->where('locale', '=', 'en')->first();
+            $engLandingPage = LandingPage::where('code', $validated['target_code'])->where('theme', site_theme())->where('locale', '=', 'en')->firstOrFail();
 
-            $data = json_decode($engLandingPage->data, true);
+            $data = $this->recordData($engLandingPage);
+            $fieldName = $validated['field_name'];
+            $storedPath = Arr::get($data, $fieldName);
 
-            if (file_exists('assets/'.$data[$input['field_name']])) {
-                @unlink('assets/'.$input['field_name']);
+            if (is_string($storedPath) && $storedPath !== '') {
+                $this->deleteStoredAsset($storedPath);
 
-                $data = array_merge($data, [$input['field_name'] => null]);
+                $data[$fieldName] = null;
 
                 $update = $engLandingPage->update([
                     'data' => json_encode($data),
@@ -294,14 +298,24 @@ class PageController extends Controller
                     'status' => $update,
                 ]);
             }
+
+            return response()->json([
+                'status' => false,
+                'message' => __('No image was found for this field.'),
+            ], 404);
         }
+
+        $request->validate([
+            'section_code' => ['required', 'string'],
+            'section_locale' => ['required', 'string'],
+        ]);
 
         $data = $request->except(['section_code', 'status', '_token', 'section_locale']);
 
         $sectionCode = $input['section_code'];
         $sectionlocale = $input['section_locale'];
 
-        $engLandingPage = LandingPage::where('code', $sectionCode)->where('theme', site_theme())->where('locale', '=', 'en')->first();
+        $engLandingPage = LandingPage::where('code', $sectionCode)->where('theme', site_theme())->where('locale', '=', 'en')->firstOrFail();
         $landingPage = LandingPage::where('code', $sectionCode)->where('theme', site_theme())->where('locale', $sectionlocale)->first();
 
         if (! $landingPage) {
@@ -310,26 +324,26 @@ class PageController extends Controller
             $landingPage->save();
         }
 
-        $oldData = json_decode($landingPage->data, true);
-        $engOldData = json_decode($engLandingPage->data, true);
+        $oldData = $this->recordData($landingPage);
+        $engOldData = $this->recordData($engLandingPage);
 
         foreach ($data as $key => $value) {
 
             if (is_array($value)) {
                 $data[$key] = json_encode($value);
-            } elseif (is_file($value)) {
+            } elseif ($request->hasFile($key)) {
                 $oldValue = Arr::get($oldData, $key);
                 $data[$key] = self::imageUploadTrait($value, $oldValue);
             }
         }
 
-        $data = array_merge($engOldData, $data);
+        $data = array_merge($engOldData, $oldData, $data);
         $landingPage->update([
             'data' => json_encode($data),
         ]);
 
         if ($sectionlocale == 'en') {
-            LandingPage::where('code', $sectionCode)->update([
+            LandingPage::where('code', $sectionCode)->where('theme', site_theme())->update([
                 'status' => $input['status'] ?? $engLandingPage->status,
             ]);
         }
@@ -388,8 +402,8 @@ class PageController extends Controller
     public function contentEdit($id)
     {
         $languages = Language::where('status', true)->get();
-        $engLandingContent = LandingContent::where('id', $id)->where('locale', '=', 'en')->first(['id', 'icon', 'title', 'description', 'photo', 'type', 'locale_id'])->toArray();
-        $landingContent = LandingContent::where('locale_id', $engLandingContent['locale_id'])->get();
+        $engLandingContent = LandingContent::where('id', $id)->where('theme', site_theme())->where('locale', '=', 'en')->firstOrFail(['id', 'icon', 'title', 'description', 'photo', 'type', 'locale_id'])->toArray();
+        $landingContent = LandingContent::where('locale_id', $engLandingContent['locale_id'])->where('theme', site_theme())->get();
 
         $groupData = $landingContent->groupBy('locale');
         $groupData = $groupData->map(function ($items) {
@@ -411,6 +425,7 @@ class PageController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => ['required'],
             'id' => ['required'],
+            'locale' => ['required', 'string'],
         ]);
 
         if ($validator->fails()) {
@@ -426,6 +441,7 @@ class PageController extends Controller
         $engLandingContent = LandingContent::where('id', $input['id'])->where('locale', '=', 'en')->first();
 
         if (! $landingContent) {
+            abort_if(! $engLandingContent, 404);
             $landingContent = $engLandingContent->replicate();
             $landingContent->locale = $locale;
             $landingContent->created_at = $engLandingContent->created_at;
@@ -439,11 +455,11 @@ class PageController extends Controller
             'description' => $request->get('description'),
         ];
 
-        if (isset($input['icon']) && is_file($input['icon'])) {
+        if ($request->hasFile('icon')) {
             $data['icon'] = self::imageUploadTrait($input['icon'], $landingContent->icon);
         }
 
-        if (isset($input['photo']) && is_file($input['photo'])) {
+        if ($request->hasFile('photo')) {
             $data['photo'] = self::imageUploadTrait($input['photo'], $landingContent->photo);
         }
 
@@ -511,24 +527,15 @@ class PageController extends Controller
         $socials = Social::orderBy('position')->get();
 
         $landingPage = LandingPage::where('code', 'footer')->where('theme', site_theme())->get();
-        $engLandingPage = $landingPage->where('locale', '=', 'en')->first();
+        abort_if($landingPage->isEmpty(), 404);
 
-        $status = $engLandingPage->status;
+        $engLandingPage = $landingPage->firstWhere('locale', defaultLocale())
+            ?? $landingPage->firstWhere('locale', 'en')
+            ?? $landingPage->first();
 
-        $groupData = $landingPage->groupBy('locale');
-
-        $groupData = $groupData->map(function ($items) {
-            return json_decode($items->first()->data, true);
-        })->toArray();
+        $status = (bool) $engLandingPage->status;
         $languages = Language::where('status', true)->get();
-
-        $locale = array_column($languages->toArray(), 'locale');
-
-        $engData = json_decode($engLandingPage->data, true);
-
-        $localeKey = array_fill_keys($locale, $engData);
-
-        $groupData = array_merge($localeKey, $groupData);
+        $groupData = $this->localizedGroupData($landingPage, $languages, $engLandingPage);
 
         return view('backend.page.'.site_theme().'.section.footer', compact('groupData', 'socials', 'languages', 'status'));
     }
@@ -542,8 +549,13 @@ class PageController extends Controller
 
     public function managementUpdate(Request $request)
     {
-        foreach ($request->section_order as $code => $order) {
-            LandingPage::where('code', $code)->update([
+        $validated = $request->validate([
+            'section_order' => ['required', 'array'],
+            'section_order.*' => ['required', 'integer', 'min:0'],
+        ]);
+
+        foreach ($validated['section_order'] as $code => $order) {
+            LandingPage::where('code', $code)->where('theme', site_theme())->update([
                 'short' => $order,
             ]);
         }
@@ -551,5 +563,71 @@ class PageController extends Controller
         notify()->success(__('Section order updated successfully!'));
 
         return back();
+    }
+
+    private function localizedGroupData(
+        Collection $records,
+        Collection $languages,
+        Model $fallbackRecord,
+        bool $includeTitle = false
+    ): array {
+        $decodedByLocale = [];
+
+        foreach ($records->groupBy('locale') as $locale => $items) {
+            $record = $items->first();
+            $recordData = $this->recordData($record);
+
+            if ($includeTitle) {
+                $recordData['title'] = $record->title;
+            }
+
+            $decodedByLocale[$locale] = $recordData;
+        }
+
+        $fallbackData = $decodedByLocale[$fallbackRecord->locale] ?? $this->recordData($fallbackRecord);
+        if ($includeTitle) {
+            $fallbackData['title'] = $fallbackRecord->title;
+        }
+
+        $locales = $languages->pluck('locale')->filter()->unique()->values();
+        if ($locales->isEmpty()) {
+            $locales = $records->pluck('locale')->filter()->unique()->values();
+        }
+
+        return $locales->mapWithKeys(function ($locale) use ($decodedByLocale, $fallbackData) {
+            return [(string) $locale => array_merge($fallbackData, $decodedByLocale[$locale] ?? [])];
+        })->all();
+    }
+
+    private function recordData(Model $record): array
+    {
+        return JsonData::decodeArray($record->getAttribute('data'), [], [
+            'model' => class_basename($record),
+            'record_id' => $record->getKey(),
+            'code' => $record->getAttribute('code'),
+            'locale' => $record->getAttribute('locale'),
+        ]);
+    }
+
+    private function deleteStoredAsset(string $storedPath): void
+    {
+        $relativePath = ltrim(str_replace('\\', '/', $storedPath), '/');
+        if (Str::startsWith($relativePath, 'assets/')) {
+            $relativePath = Str::after($relativePath, 'assets/');
+        }
+
+        $assetRoot = realpath(base_path('assets'));
+        $assetPath = realpath(base_path('assets/'.$relativePath));
+
+        if ($assetRoot === false || $assetPath === false || ! is_file($assetPath)) {
+            return;
+        }
+
+        $assetPrefix = rtrim(str_replace('\\', '/', $assetRoot), '/').'/';
+        $normalizedAssetPath = str_replace('\\', '/', $assetPath);
+
+        if (Str::startsWith($normalizedAssetPath, $assetPrefix)) {
+            @unlink($assetPath);
+        }
     }
 }

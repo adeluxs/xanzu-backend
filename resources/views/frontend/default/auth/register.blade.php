@@ -243,7 +243,7 @@
 
                         @if ($googleReCaptcha)
                             <div class="g-recaptcha mb-3" id="feedback-recaptcha"
-                                data-sitekey="{{ json_decode($googleReCaptcha->data, true)['site_key'] }}">
+                                data-sitekey="{{ data_get(\App\Support\JsonData::decodeArray($googleReCaptcha->data), 'site_key', '') }}">
                             </div>
                         @endif
 
@@ -541,7 +541,7 @@
                                 @else
                                     @if ($googleReCaptcha)
                                         <div class="g-recaptcha mb-3" id="seller-recaptcha"
-                                            data-sitekey="{{ json_decode($googleReCaptcha->data, true)['site_key'] }}">
+                                            data-sitekey="{{ data_get(\App\Support\JsonData::decodeArray($googleReCaptcha->data), 'site_key', '') }}">
                                         </div>
                                     @endif
                                     <button class="primary-button w-100" type="submit">
@@ -568,7 +568,7 @@
 
                                 @if ($googleReCaptcha)
                                     <div class="g-recaptcha mb-3 mt-20" id="seller-recaptcha-step2"
-                                        data-sitekey="{{ json_decode($googleReCaptcha->data, true)['site_key'] }}">
+                                        data-sitekey="{{ data_get(\App\Support\JsonData::decodeArray($googleReCaptcha->data), 'site_key', '') }}">
                                     </div>
                                 @endif
 

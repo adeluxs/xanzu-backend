@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ListingReview;
 use App\Models\Order;
 use App\Models\Page;
+use App\Support\JsonData;
 use Illuminate\Http\Request;
 use Illuminate\Support\Fluent;
 
@@ -54,7 +55,7 @@ class PurchaseController extends Controller
                 ->firstOrFail();
         }
 
-        $data = new Fluent(json_decode($page->data, true));
+        $data = new Fluent(JsonData::decodeArray($page->data));
 
         return view('frontend::purchase.success', compact('order', 'data'));
     }

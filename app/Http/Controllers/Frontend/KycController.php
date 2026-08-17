@@ -9,6 +9,7 @@ use App\Models\UserKyc;
 use App\Traits\ImageUpload;
 use App\Traits\NotifyTrait;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Validator;
 
 class KycController extends Controller
@@ -79,7 +80,7 @@ class KycController extends Controller
 
         foreach ($newKycs as $key => $value) {
 
-            if (is_file($value)) {
+            if ($value instanceof UploadedFile) {
                 $newKycs[$key] = self::imageUploadTrait($value);
             }
         }

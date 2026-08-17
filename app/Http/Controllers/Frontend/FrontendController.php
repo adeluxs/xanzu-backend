@@ -8,6 +8,7 @@ use App\Models\Listing;
 use App\Models\ListingReview;
 use App\Models\RecentSearch;
 use App\Models\User;
+use App\Support\JsonData;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cookie;
 
@@ -334,7 +335,7 @@ class FrontendController extends Controller
     public function deleteBrowsingHistory(Request $request)
     {
         $history = $request->cookie('browsing_history', '[]');
-        $history = json_decode($history, true);
+        $history = JsonData::decodeArray($history);
 
         if ($request->has('id')) {
             $id = decrypt($request->id);

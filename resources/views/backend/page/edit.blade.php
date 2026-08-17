@@ -46,7 +46,8 @@
             @foreach($groupData as $key => $value)
 
                 @php
-                    $data = new Illuminate\Support\Fluent($value);
+                    $data = new Illuminate\Support\Fluent(is_array($value) ? $value : []);
+                    $selectedSectionIds = \App\Support\JsonData::decodeArray($data->section_id);
                 @endphp
 
                 <div
@@ -87,7 +88,7 @@
                                 </div>
 
                                 @if($key != 'en')
-                                    <input type="hidden" name="section_id" value="{{$data->section_id}}">
+                                    <input type="hidden" name="section_id" value="{{ is_array($data->section_id) ? json_encode($data->section_id) : $data->section_id }}">
                                 @endif
 
                                 @if($key == 'en')
@@ -100,7 +101,7 @@
                                                 <div class="site-input-groups">
                                                     <select name="section_id[]" id="section_id" class="form-select" multiple>
                                                         @foreach($landingSections as $section)
-                                                            <option @selected(is_array(json_decode($data->section_id)) && in_array($section->id,json_decode($data->section_id))) value="{{$section->id}}">{{ $section->name }}</option>
+                                                            <option @selected(in_array($section->id, $selectedSectionIds)) value="{{$section->id}}">{{ $section->name }}</option>
                                                         @endforeach
                                                     </select>
                                                 </div>

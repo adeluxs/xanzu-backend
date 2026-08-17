@@ -125,7 +125,7 @@ class AuthController extends Controller
                 'phone' => $request->phone,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
-                'transfer_status' => (bool) setting('transfer_default_merchant', 'transfer', true),
+                'transfer_status' => setting_enabled('transfer_default_merchant', 'transfer', true),
                 'user_type' => 'merchant',
                 'kyc' => $this->merchantInitialKycStatus(),
                 'gender' => $request->gender,

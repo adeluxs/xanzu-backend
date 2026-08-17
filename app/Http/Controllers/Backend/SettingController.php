@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Backend;
 
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
+use App\Models\User;
 use App\Traits\ImageUpload;
 use Exception;
 use Illuminate\Contracts\Foundation\Application;
@@ -184,6 +185,22 @@ class SettingController extends Controller
                 }
             }
 
+            if (($section ?? null) === 'transfer') {
+                $syncResult = $this->syncTransferStatuses($data);
+
+                Log::notice('TRANSFER_SETTINGS_UPDATED', [
+                    'request_id' => $request->header('X-Request-ID') ?: (string) Str::uuid(),
+                    'admin_id' => auth('admin')->id(),
+                    'ip' => $request->ip(),
+                    'global_status' => setting_enabled('transfer_global_status', 'transfer', true),
+                    'buyer_status' => $syncResult['buyer']['enabled'],
+                    'merchant_status' => $syncResult['merchant']['enabled'],
+                    'kyc_required' => setting_enabled('transfer_require_kyc', 'transfer', false),
+                    'buyer_accounts_synchronized' => $syncResult['buyer']['updated'],
+                    'merchant_accounts_synchronized' => $syncResult['merchant']['updated'],
+                ]);
+            }
+
             notify()->success(__('Settings has been saved'), 'Success');
 
             return back();
@@ -192,6 +209,43 @@ class SettingController extends Controller
 
             return back();
         }
+    }
+
+    /**
+     * Apply the role switches to existing users as well as future sign-ups.
+     * This prevents an old per-user default from keeping merchants disabled
+     * after the administrator enables merchant transfers.
+     */
+    private function syncTransferStatuses(array $settings): array
+    {
+        $result = [];
+
+        foreach ([
+            'buyer' => 'transfer_default_buyer',
+            'merchant' => 'transfer_default_merchant',
+        ] as $userType => $settingKey) {
+            $enabled = value_is_enabled(
+                $settings[$settingKey] ?? setting($settingKey, 'transfer', true)
+            );
+
+            $updated = User::query()
+                ->where('user_type', $userType)
+                ->where(function ($query) use ($enabled) {
+                    $query->whereNull('transfer_status')
+                        ->orWhere('transfer_status', '!=', $enabled);
+                })
+                ->update([
+                    'transfer_status' => $enabled,
+                    'updated_at' => now(),
+                ]);
+
+            $result[$userType] = [
+                'enabled' => $enabled,
+                'updated' => $updated,
+            ];
+        }
+
+        return $result;
     }
 
     public function seoMeta()

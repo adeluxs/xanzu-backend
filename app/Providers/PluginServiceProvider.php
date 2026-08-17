@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\JsonData;
 use App\Support\Performance\DatabaseAvailability;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
@@ -30,21 +31,21 @@ class PluginServiceProvider extends ServiceProvider
 
             // Nexmo sms plugin
             if (plugin_active('Nexmo')) {
-                $nexmoCredential = json_decode(plugin_active('Nexmo')->data);
+                $nexmoCredential = JsonData::decodeArray(plugin_active('Nexmo')->data);
                 config()->set([
-                    'sms.connections.nexmo.nexmo_from' => $nexmoCredential->from,
-                    'sms.connections.nexmo.api_key' => $nexmoCredential->api_key,
-                    'sms.connections.nexmo.api_secret' => $nexmoCredential->api_secret,
+                    'sms.connections.nexmo.nexmo_from' => $nexmoCredential['from'] ?? null,
+                    'sms.connections.nexmo.api_key' => $nexmoCredential['api_key'] ?? null,
+                    'sms.connections.nexmo.api_secret' => $nexmoCredential['api_secret'] ?? null,
                 ]);
             }
 
             // Twilio sms plugin
             if (plugin_active('Twilio')) {
-                $twilioCredential = json_decode(plugin_active('Twilio')->data);
+                $twilioCredential = JsonData::decodeArray(plugin_active('Twilio')->data);
                 config()->set([
-                    'sms.connections.twilio.twilio_sid' => $twilioCredential->twilio_sid,
-                    'sms.connections.twilio.twilio_auth_token' => $twilioCredential->twilio_auth_token,
-                    'sms.connections.twilio.twilio_phone' => $twilioCredential->twilio_phone,
+                    'sms.connections.twilio.twilio_sid' => $twilioCredential['twilio_sid'] ?? null,
+                    'sms.connections.twilio.twilio_auth_token' => $twilioCredential['twilio_auth_token'] ?? null,
+                    'sms.connections.twilio.twilio_phone' => $twilioCredential['twilio_phone'] ?? null,
                 ]);
             }
 
@@ -52,12 +53,12 @@ class PluginServiceProvider extends ServiceProvider
             if (plugin_active('Pusher')) {
                 $push_notification = plugin_active('Pusher');
                 if ($push_notification->name == 'Pusher') {
-                    $pusherCredential = json_decode($push_notification->data);
+                    $pusherCredential = JsonData::decodeArray($push_notification->data);
                     config()->set([
-                        'broadcasting.connections.pusher.app_id' => $pusherCredential->pusher_app_id,
-                        'broadcasting.connections.pusher.key' => $pusherCredential->pusher_app_key,
-                        'broadcasting.connections.pusher.secret' => $pusherCredential->pusher_app_secret,
-                        'broadcasting.connections.pusher.options.cluster' => $pusherCredential->pusher_app_cluster,
+                        'broadcasting.connections.pusher.app_id' => $pusherCredential['pusher_app_id'] ?? null,
+                        'broadcasting.connections.pusher.key' => $pusherCredential['pusher_app_key'] ?? null,
+                        'broadcasting.connections.pusher.secret' => $pusherCredential['pusher_app_secret'] ?? null,
+                        'broadcasting.connections.pusher.options.cluster' => $pusherCredential['pusher_app_cluster'] ?? null,
                     ]);
                 }
             }
@@ -66,11 +67,11 @@ class PluginServiceProvider extends ServiceProvider
             if (plugin_active('Reloadly')) {
                 $reloadly = plugin_active('Reloadly');
                 if ($reloadly->name == 'Reloadly') {
-                    $reloadlyCredentials = json_decode($reloadly->data);
+                    $reloadlyCredentials = JsonData::decodeArray($reloadly->data);
                     config()->set([
-                        'reloadly.connections.client_id' => $reloadlyCredentials->client_id,
-                        'reloadly.connections.client_secret' => $reloadlyCredentials->client_secret,
-                        'reloadly.connections.live_or_sandbox_url' => $reloadlyCredentials->live_or_sandbox_url,
+                        'reloadly.connections.client_id' => $reloadlyCredentials['client_id'] ?? null,
+                        'reloadly.connections.client_secret' => $reloadlyCredentials['client_secret'] ?? null,
+                        'reloadly.connections.live_or_sandbox_url' => $reloadlyCredentials['live_or_sandbox_url'] ?? null,
                     ]);
                 }
             }
@@ -80,10 +81,10 @@ class PluginServiceProvider extends ServiceProvider
                 $flutterwave = plugin_active('Flutterwave');
                 if ($flutterwave->name == 'Flutterwave') {
 
-                    $flutterwaveCredentials = json_decode($flutterwave->data);
+                    $flutterwaveCredentials = JsonData::decodeArray($flutterwave->data);
 
                     config()->set([
-                        'flutterwave.connections.secret_key' => $flutterwaveCredentials->secret_key,
+                        'flutterwave.connections.secret_key' => $flutterwaveCredentials['secret_key'] ?? null,
                     ]);
                 }
             }
@@ -93,10 +94,10 @@ class PluginServiceProvider extends ServiceProvider
                 $bloc = plugin_active('Bloc');
                 if ($bloc->name == 'Bloc') {
 
-                    $blocCredentials = json_decode($bloc->data);
+                    $blocCredentials = JsonData::decodeArray($bloc->data);
 
                     config()->set([
-                        'bloc.connections.api_key' => $blocCredentials->api_key,
+                        'bloc.connections.api_key' => $blocCredentials['api_key'] ?? null,
                     ]);
                 }
             }
@@ -105,9 +106,9 @@ class PluginServiceProvider extends ServiceProvider
             if (plugin_active('Tpaga')) {
                 $tpaga = plugin_active('Tpaga');
                 if ($tpaga->name == 'Tpaga') {
-                    $tpagaCredentials = json_decode($tpaga->data);
+                    $tpagaCredentials = JsonData::decodeArray($tpaga->data);
                     config()->set([
-                        'tpaga.connections.api_key' => $tpagaCredentials->api_key,
+                        'tpaga.connections.api_key' => $tpagaCredentials['api_key'] ?? null,
                     ]);
                 }
             }

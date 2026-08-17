@@ -12,10 +12,12 @@ use App\Models\Transaction;
 use App\Models\WithdrawAccount;
 use App\Models\WithdrawalSchedule;
 use App\Models\WithdrawMethod;
+use App\Support\JsonData;
 use App\Traits\ImageUpload;
 use App\Traits\NotifyTrait;
 use App\Traits\Payment;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Validator;
@@ -96,7 +98,7 @@ class PaymentController extends Controller
         $credentials = $input['credentials'];
         foreach ($credentials as $key => $value) {
 
-            if (isset($value['value']) && is_file($value['value'])) {
+            if (($value['value'] ?? null) instanceof UploadedFile) {
                 $credentials[$key]['value'] = self::imageUploadTrait($value['value']);
             }
         }
@@ -168,7 +170,7 @@ class PaymentController extends Controller
 
         $withdrawAccount = WithdrawAccount::query()->where('user_id', auth()->id())->findOrFail(decrypt($id));
 
-        $oldCredentials = json_decode($withdrawAccount->credentials, true);
+        $oldCredentials = JsonData::decodeArray($withdrawAccount->credentials);
 
         $credentials = $input['credentials'];
 
@@ -178,7 +180,7 @@ class PaymentController extends Controller
                 $credentials[$key]['value'] = data_get($oldCredentials[$key], 'value');
             }
 
-            if (isset($value['value']) && is_file($value['value'])) {
+            if (($value['value'] ?? null) instanceof UploadedFile) {
                 $credentials[$key]['value'] = self::imageUploadTrait($value['value'], data_get($oldCredentials[$key], 'value'));
             }
         }
@@ -223,9 +225,9 @@ class PaymentController extends Controller
      */
     public function details($accountId, int $amount = 0)
     {
-        $withdrawAccount = WithdrawAccount::with('method')->where('user_id', auth()->id())->find($accountId);
+        $withdrawAccount = WithdrawAccount::with('method')->where('user_id', auth()->id())->findOrFail($accountId);
 
-        $credentials = json_decode($withdrawAccount?->credentials, true);
+        $credentials = JsonData::decodeArray($withdrawAccount->credentials);
 
         $currency = setting('site_currency', 'global');
         $method = $withdrawAccount->method;
@@ -369,7 +371,7 @@ class PaymentController extends Controller
             $user->id,
             null,
             'User',
-            json_decode($withdrawAccount->credentials, true)
+            JsonData::decodeArray($withdrawAccount->credentials)
         );
 
         if ($withdrawMethod->type == 'auto') {

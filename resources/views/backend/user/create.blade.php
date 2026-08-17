@@ -360,7 +360,7 @@
                                             <div class="site-card-body">
                                                 <div class="row">
                                                     <div class="col-md-4 col-xl-4 col-lg-4">
-                                                        @foreach (json_decode($kyc->fields, true) as $key => $field)
+                                                        @foreach (\App\Support\JsonData::decodeArray($kyc->fields) as $key => $field)
                                                             @if ($field['type'] == 'file')
                                                                 <div class="site-input-groups mb-2">
                                                                     <label class="box-input-label"

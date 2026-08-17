@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\JsonData;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -14,7 +15,7 @@ class KYCResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $fieldsJson = json_decode($this->fields, true) ?? [];
+        $fieldsJson = JsonData::decodeArray($this->fields);
         $this->icon = $this->icon ? asset($this->icon) : null;
         $kycFields = [];
         foreach ($fieldsJson as $key => $value) {

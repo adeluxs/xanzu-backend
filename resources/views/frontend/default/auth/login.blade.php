@@ -70,7 +70,7 @@
 
             @if ($googleReCaptcha)
                 <div class="g-recaptcha mb-3" id="feedback-recaptcha"
-                    data-sitekey="{{ json_decode($googleReCaptcha->data, true)['site_key'] }}">
+                    data-sitekey="{{ data_get(\App\Support\JsonData::decodeArray($googleReCaptcha->data), 'site_key', '') }}">
                 </div>
             @endif
 

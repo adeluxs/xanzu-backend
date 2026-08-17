@@ -19,7 +19,7 @@
 
 <ul class="list-group mb-4">
 
-    @foreach( json_decode($data->manual_field_data,true) as $name => $data)
+    @foreach (\App\Support\JsonData::decodeArray($data->manual_field_data) as $name => $data)
         <li class="list-group-item">
             {{ $name }}: @if( $data['type'] == 'file' )
                 <img src="{{ asset($data['value']) }}" alt=""/>
@@ -56,6 +56,5 @@
     'use strict';
     lucide.createIcons();
 </script>
-
 
 

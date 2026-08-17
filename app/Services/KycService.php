@@ -6,6 +6,7 @@ use App\Enums\KYCStatus;
 use App\Models\Kyc;
 use App\Models\User;
 use App\Models\UserKyc;
+use App\Support\JsonData;
 use App\Traits\ImageUpload;
 use App\Traits\NotifyTrait;
 use Illuminate\Http\UploadedFile;
@@ -30,7 +31,7 @@ class KycService
         $rules = [];
         $messages = [];
 
-        foreach (json_decode($kyc->fields, true) ?? [] as $key => $value) {
+        foreach (JsonData::decodeArray($kyc->fields) as $key => $value) {
             $fieldRules = [];
 
             if (!empty($value['validation']) && $value['validation'] == 'required' && !$resubmit) {
@@ -80,7 +81,7 @@ class KycService
         }
 
         $lastRejectedKyc = UserKyc::where('user_id', $user->id)->where('kyc_id', $kyc->id)->where('status', 'rejected')->latest()->first();
-        foreach (json_decode($kyc->fields, true) ?? [] as $key => $value) {
+        foreach (JsonData::decodeArray($kyc->fields) as $key => $value) {
             $kycCredentialValue = data_get($data, $key);
             if (!$kycCredentialValue && $resubmit) {
                 $processedData[$value['name']] = data_get($lastRejectedKyc?->data, $value['name']);

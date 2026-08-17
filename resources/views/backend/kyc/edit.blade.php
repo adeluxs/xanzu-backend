@@ -69,7 +69,7 @@
                                 </div>
 
                                 <div class="addOptions">
-                                    @foreach (json_decode($kyc->fields, true) as $key => $value)
+                                    @foreach (\App\Support\JsonData::decodeArray($kyc->fields) as $key => $value)
                                         <div class="mb-4">
                                             <div class="option-remove-row row g-3">
                                                 <div class="col-12 col-lg-6">

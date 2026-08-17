@@ -172,7 +172,7 @@
                                     </div>
                                     <div class="addOptions">
                                         @if (old('features', $plan->features))
-                                            @foreach (old('features', json_decode($plan->features)) as $features)
+                                    @foreach (\App\Support\JsonData::decodeArray(old('features', $plan->features)) as $features)
                                                 <div class="mb-4">
                                                     <div class="option-remove-row row">
                                                         <div class="col-xl-4 col-lg-6 col-md-6 col-sm-6 col-12">

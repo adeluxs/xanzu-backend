@@ -44,7 +44,7 @@
             @foreach($groupData as $key => $value)
 
                 @php
-                    $data = new Illuminate\Support\Fluent($value);
+                    $data = new Illuminate\Support\Fluent(is_array($value) ? $value : []);
                 @endphp
 
                 <div class="tab-pane fade {{ $loop->index == 0 ?'show active' : '' }}" id="{{$key}}" role="tabpanel" aria-labelledby="pills-informations-tab">

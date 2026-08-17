@@ -18,6 +18,7 @@ use App\Models\Plugin;
 use App\Models\Setting;
 use App\Models\UserDevice;
 use App\Models\WithdrawMethod;
+use App\Support\JsonData;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -237,7 +238,7 @@ class GeneralController extends Controller
                 ->when($currency !== '', fn ($query) => $query->where('currency', $currency))
                 ->get();
         })->map(function ($method) {
-            $method->fields = dynamicFieldKeyFormat($method->fields ? json_decode($method->fields, true) : []);
+            $method->fields = dynamicFieldKeyFormat(JsonData::decodeArray($method->fields));
 
             $method->icon = asset($method->icon);
             $method = $method->except(['created_at', 'updated_at']);
@@ -360,7 +361,7 @@ class GeneralController extends Controller
             // merchant kyc fields
             $merchantKycFields = Cache::remember('api.register-fields.merchant-kyc-template', now()->addMinutes(10), static fn() => Kyc::where('user_type', 'merchant')->value('fields'));
 
-            $merchantKycData = $merchantKycFields ? dynamicFieldKeyFormat(json_decode($merchantKycFields, true)) : [];
+            $merchantKycData = dynamicFieldKeyFormat(JsonData::decodeArray($merchantKycFields));
 
             foreach ($merchantKycData as $key => &$field) {
                 unset($field['instruction_image']);

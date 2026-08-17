@@ -34,6 +34,19 @@ class SendMoneyController extends Controller
 
             $responseData = $this->sendMoneyService->transferConfig($user);
 
+            Log::info('TRANSFER_CONFIG_RESOLVED', [
+                'request_id' => $request->attributes->get('request_id'),
+                'user_id' => $user->id,
+                'user_type' => $responseData['user_type'],
+                'transfer_status' => $responseData['transfer_status'],
+                'global_status' => $responseData['global_status'],
+                'role_status' => $responseData['role_status'],
+                'user_status' => $responseData['user_status'],
+                'kyc_required' => $responseData['kyc_required'],
+                'kyc_verified' => $responseData['kyc_verified'],
+                'disabled_reason' => $responseData['disabled_reason'],
+            ]);
+
             return $this->successResponse($responseData);
         } catch (\Throwable $th) {
             Log::error('SendMoneyController@config: Failed', [
@@ -197,6 +210,12 @@ class SendMoneyController extends Controller
             }
             if (str_contains($message, 'not enabled for your account')) {
                 return 'TRANSFER_USER_DISABLED';
+            }
+            if (str_contains($message, 'disabled for merchant accounts')) {
+                return 'TRANSFER_MERCHANT_DISABLED';
+            }
+            if (str_contains($message, 'disabled for buyer accounts')) {
+                return 'TRANSFER_BUYER_DISABLED';
             }
             if (str_contains($message, 'kyc')) {
                 return 'TRANSFER_KYC_REQUIRED';

@@ -89,17 +89,17 @@ class SendMoneyService
         $summary = $this->transferLimitService->summary($user);
         unset($summary['limit_model']);
 
-        $globalEnabled = (bool) setting('transfer_global_status', 'transfer', true);
-        $userEnabled = (bool) $user->transfer_status;
-        $kycRequired = (bool) setting('transfer_require_kyc', 'transfer', false);
-        $kycPassed = ! $kycRequired || (bool) $user->kyc;
+        $access = $this->transferAccess($user);
 
         return [
             'user_balance' => (float) $user->balance,
-            'transfer_status' => $globalEnabled && $userEnabled && $kycPassed,
-            'global_status' => $globalEnabled,
-            'user_status' => $userEnabled,
-            'kyc_required' => $kycRequired,
+            'transfer_status' => $access['enabled'],
+            'global_status' => $access['global_enabled'],
+            'role_status' => $access['role_enabled'],
+            'user_status' => $access['user_enabled'],
+            'user_type' => $access['user_type'],
+            'disabled_reason' => $access['disabled_reason'],
+            'kyc_required' => $access['kyc_required'],
             'kyc_verified' => (bool) $user->kyc,
             'currency' => setting('site_currency', 'global'),
             'currency_symbol' => setting('currency_symbol', 'global'),
@@ -241,17 +241,70 @@ class SendMoneyService
 
     private function validateFeatureAccess(User $sender): void
     {
-        if (! (bool) setting('transfer_global_status', 'transfer', true)) {
+        $access = $this->transferAccess($sender);
+
+        if (! $access['global_enabled']) {
             throw ValidationException::withMessages(['transfer' => __('Transfers are temporarily disabled globally.')]);
         }
 
-        if (! (bool) $sender->transfer_status) {
+        if (! $access['role_enabled']) {
+            throw ValidationException::withMessages([
+                'transfer' => __('Transfers are disabled for :type accounts.', [
+                    'type' => $access['user_type'],
+                ]),
+            ]);
+        }
+
+        if (! $access['user_enabled']) {
             throw ValidationException::withMessages(['transfer' => __('Transfer is not enabled for your account.')]);
         }
 
-        if ((bool) setting('transfer_require_kyc', 'transfer', false) && ! (bool) $sender->kyc) {
+        if ($access['kyc_required'] && ! $access['kyc_verified']) {
             throw ValidationException::withMessages(['transfer' => __('KYC verification is required to send money.')]);
         }
+    }
+
+    /**
+     * Resolve every switch that controls transfers for a user.
+     *
+     * The buyer/merchant settings are role-wide switches. The per-user flag is
+     * retained as an account-level override so an administrator can still
+     * disable one account without disabling the whole role.
+     */
+    private function transferAccess(User $user): array
+    {
+        $userType = $user->user_type === 'merchant' ? 'merchant' : 'buyer';
+        $roleSetting = $userType === 'merchant'
+            ? 'transfer_default_merchant'
+            : 'transfer_default_buyer';
+
+        $globalEnabled = setting_enabled('transfer_global_status', 'transfer', true);
+        $roleEnabled = setting_enabled($roleSetting, 'transfer', true);
+        $userEnabled = value_is_enabled($user->transfer_status);
+        $kycRequired = setting_enabled('transfer_require_kyc', 'transfer', false);
+        $kycVerified = (bool) $user->kyc;
+
+        $disabledReason = null;
+        if (! $globalEnabled) {
+            $disabledReason = 'global_disabled';
+        } elseif (! $roleEnabled) {
+            $disabledReason = $userType.'_disabled';
+        } elseif (! $userEnabled) {
+            $disabledReason = 'account_disabled';
+        } elseif ($kycRequired && ! $kycVerified) {
+            $disabledReason = 'kyc_required';
+        }
+
+        return [
+            'enabled' => $disabledReason === null,
+            'global_enabled' => $globalEnabled,
+            'role_enabled' => $roleEnabled,
+            'user_enabled' => $userEnabled,
+            'user_type' => $userType,
+            'kyc_required' => $kycRequired,
+            'kyc_verified' => $kycVerified,
+            'disabled_reason' => $disabledReason,
+        ];
     }
 
     private function validateRecipient(User $sender, ?User $recipient): void

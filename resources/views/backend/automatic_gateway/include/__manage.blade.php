@@ -46,7 +46,7 @@
                             </div>
                         </div>
 
-                        @foreach(json_decode($gateway->credentials) as $key => $value)
+                        @foreach ((array) json_decode((string) $gateway->credentials) as $key => $value)
                             @php
                                 $credentialKey = strtolower((string) $key);
                                 $isSecretCredential = str_contains($credentialKey, 'token')

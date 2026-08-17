@@ -1,4 +1,4 @@
-@foreach (json_decode($kyc->fields, true) as $key => $field)
+@foreach (\App\Support\JsonData::decodeArray($kyc->fields) as $key => $field)
     <div class="{{ $field['type'] == 'file' ? 'col-lg-6' : 'col-md-6' }}">
         @if ($field['type'] == 'file')
             <!-- File Upload -->

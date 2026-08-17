@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\JsonData;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -14,7 +15,7 @@ class WithdrawAccountResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $fields = json_decode($this->credentials ?? '[]', true);
+        $fields = JsonData::decodeArray($this->credentials);
         foreach ($fields as $key => $field) {
             if (isset($field['type']) && $field['type'] == 'file' && $field['value']) {
                 $fields[$key]['value'] = asset($field['value']);

@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Language;
 use App\Models\Navigation;
 use App\Models\Page;
+use App\Support\JsonData;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\View\Factory;
 use Illuminate\Contracts\View\View;
@@ -94,7 +95,7 @@ class NavigationController extends Controller
     public function edit($id)
     {
 
-        $navigation = Navigation::find($id);
+        $navigation = Navigation::findOrFail($id);
         $pages = Page::where('locale', 'en')->where('status', true)->get();
 
         return view('backend.navigation.include.__edit_section', compact('navigation', 'pages'))->render();
@@ -259,7 +260,7 @@ class NavigationController extends Controller
 
         $locale = array_column($languages->toArray(), 'locale');
 
-        $navigationContent = $navigation->translate == null ? [] : json_decode($navigation->translate, true);
+        $navigationContent = JsonData::decodeArray($navigation->translate);
 
         $localeKey = array_fill_keys($locale, '');
 
@@ -273,9 +274,9 @@ class NavigationController extends Controller
 
         $input = $request->all();
 
-        $navigation = Navigation::find($input['id']);
+        $navigation = Navigation::findOrFail($input['id']);
 
-        $oldTranslate = $navigation->translate == null ? [] : json_decode($navigation->translate, true);
+        $oldTranslate = JsonData::decodeArray($navigation->translate);
 
         $value = [];
         $value[$input['locale']] = $input['name'];

@@ -28,7 +28,7 @@
 
 <ul class="list-group mb-4">
 
-    @foreach( json_decode($data->manual_field_data) as $key => $value)
+    @foreach ((array) json_decode((string) $data->manual_field_data) as $key => $value)
         <li class="list-group-item">
             {{ $key }}:
 
@@ -68,6 +68,5 @@
     'use strict';
     lucide.createIcons();
 </script>
-
 
 

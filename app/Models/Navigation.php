@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\NavigationType;
+use App\Support\JsonData;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -22,9 +23,7 @@ class Navigation extends Model
     protected function tname(): Attribute
     {
         return Attribute::make(get: function () {
-            if ($this->translate != null) {
-                $jsonData = json_decode($this->translate, true);
-            }
+            $jsonData = JsonData::decodeArray($this->translate);
 
             return $jsonData[session()->get('locale') ?? config('app.locale')] ?? $this->name;
         });

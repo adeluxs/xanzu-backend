@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\WithdrawAccount;
 use App\Models\WithdrawMethod;
+use App\Support\JsonData;
 use App\Traits\ImageUpload;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
@@ -32,7 +33,7 @@ class WithdrawAccountService
             $method = WithdrawMethod::find($data['withdraw_method_id']);
         }
 
-        $methodFields = json_decode($method->fields ?? '[]', true);
+        $methodFields = JsonData::decodeArray($method?->fields);
         foreach ($methodFields as $fieldKey => $field) {
             if ($field['type'] == 'file') {
                 $rules['customFields.' . $fieldKey] = ($isEdit) ? 'nullable|mimes:jpeg,jpg,png,svg|max:2000' : $field['validation'] . '|mimes:jpeg,jpg,png,svg|max:2000';
@@ -61,7 +62,7 @@ class WithdrawAccountService
         $account = WithdrawAccount::find($accountId);
         $withdrawAccount = $accountId ? $account : new WithdrawAccount;
 
-        foreach (json_decode($method->fields ?? '[]', true) as $key => $value) {
+        foreach (JsonData::decodeArray($method?->fields) as $key => $value) {
             $customFieldValue = Arr::get($data['customFields'], $key);
 
             if ($customFieldValue instanceof UploadedFile) {
@@ -103,7 +104,7 @@ class WithdrawAccountService
             throw new \Exception('Withdraw account not found');
         }
 
-        $oldCredentials = json_decode($withdrawAccounts->credentials, true);
+        $oldCredentials = JsonData::decodeArray($withdrawAccounts->credentials);
 
         foreach ($oldCredentials as $value) {
             if (isset($value['value']) && $value['type'] == 'file') {

@@ -42,25 +42,25 @@
                                 </div>
 
                                 <div class="site-input-groups mb-3">
-                                    <label class="box-input-label">{{ __('Default Transfer Status - Buyer') }}</label>
+                                    <label class="box-input-label">{{ __('Buyer Transfer Status') }}</label>
                                     <div class="switch-field">
                                         <input type="radio" id="transfer_default_buyer-1" name="transfer_default_buyer" value="1" @checked(setting('transfer_default_buyer', 'transfer'))>
                                         <label for="transfer_default_buyer-1">{{ __('Enabled') }}</label>
                                         <input type="radio" id="transfer_default_buyer-0" name="transfer_default_buyer" value="0" @checked(!setting('transfer_default_buyer', 'transfer'))>
                                         <label for="transfer_default_buyer-0">{{ __('Disabled') }}</label>
                                     </div>
-                                    <small class="text-muted">{{ __('Default transfer status for new buyer registrations.') }}</small>
+                                    <small class="text-muted">{{ __('Enables or disables transfers for existing and newly registered buyers. Individual accounts can still be controlled from the user profile.') }}</small>
                                 </div>
 
                                 <div class="site-input-groups mb-3">
-                                    <label class="box-input-label">{{ __('Default Transfer Status - Merchant') }}</label>
+                                    <label class="box-input-label">{{ __('Merchant Transfer Status') }}</label>
                                     <div class="switch-field">
                                         <input type="radio" id="transfer_default_merchant-1" name="transfer_default_merchant" value="1" @checked(setting('transfer_default_merchant', 'transfer'))>
                                         <label for="transfer_default_merchant-1">{{ __('Enabled') }}</label>
                                         <input type="radio" id="transfer_default_merchant-0" name="transfer_default_merchant" value="0" @checked(!setting('transfer_default_merchant', 'transfer'))>
                                         <label for="transfer_default_merchant-0">{{ __('Disabled') }}</label>
                                     </div>
-                                    <small class="text-muted">{{ __('Default transfer status for new merchant registrations.') }}</small>
+                                    <small class="text-muted">{{ __('Enables or disables transfers for existing and newly registered merchants. Individual accounts can still be controlled from the user profile.') }}</small>
                                 </div>
 
                                 <div class="site-input-groups mb-3">

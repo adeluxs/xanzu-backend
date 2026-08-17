@@ -156,6 +156,19 @@
                         </div>
                     </div>
                 </div>
+                <div class="col-xl-12">
+                    <div class="profile-card-single">
+                        <h5 class="heading">{{ __('Transfer Status') }}</h5>
+                        <div class="switch-field">
+                            <input type="radio" id="transfer-status-active" name="transfer_status" value="1"
+                                @checked($user->transfer_status) />
+                            <label for="transfer-status-active">{{ __('Active') }}</label>
+                            <input type="radio" id="transfer-status-disabled" name="transfer_status" value="0"
+                                @checked(!$user->transfer_status) />
+                            <label for="transfer-status-disabled">{{ __('Disabled') }}</label>
+                        </div>
+                    </div>
+                </div>
                 @if (!$user->is_seller)
                     <div class="col-xl-12">
                         <div class="profile-card-single">

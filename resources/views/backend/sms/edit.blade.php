@@ -35,7 +35,7 @@
 
                                                   <p class="paragraph mb-0 mt-2"><i
                                                     data-lucide="alert-triangle"></i>{{ __('The Shortcuts you can use') }}
-                                                <strong>{{ implode(", ",json_decode($template->short_codes)) }}</strong></p>
+                                                <strong>{{ implode(', ', \App\Support\JsonData::decodeArray($template->short_codes)) }}</strong></p>
                                     </div>
                                 </div>
 
@@ -80,4 +80,3 @@
         </div>
     </div>
 @endsection
-

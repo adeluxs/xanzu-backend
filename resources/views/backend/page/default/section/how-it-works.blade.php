@@ -32,7 +32,7 @@
             <div class="tab-content" id="pills-tabContent">
                 @foreach ($groupData as $key => $value)
                     @php
-                        $data = new Illuminate\Support\Fluent($value);
+                        $data = new Illuminate\Support\Fluent(is_array($value) ? $value : []);
                     @endphp
 
                     <div class="tab-pane fade {{ $loop->first ? 'show active' : '' }}" id="{{ $key }}"

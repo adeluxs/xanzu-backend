@@ -13,6 +13,7 @@ use App\Models\LoginActivities;
 use App\Models\ReferralLink;
 use App\Models\User;
 use App\Rules\Recaptcha;
+use App\Support\JsonData;
 use App\Traits\ImageUpload;
 use App\Traits\NotifyTrait;
 use Illuminate\Http\RedirectResponse;
@@ -36,7 +37,7 @@ class RegisteredUserController extends Controller
         abort_unless(setting('account_creation', 'permission'), '403', __('User registration is closed now'));
 
         $page = getPageData('registration');
-        $data = json_decode($page?->data, true);
+        $data = JsonData::decodeArray($page?->data);
 
         $location = getLocation();
         $referralCode = ReferralLink::find($request->cookie('invite'))?->code ?? $request->get('invite');
@@ -67,8 +68,7 @@ class RegisteredUserController extends Controller
         $request->validate([
             'first_name' => [Rule::requiredIf($isFirstName), 'string', 'max:255'],
             'last_name' => [Rule::requiredIf($isLastName), 'string', 'max:255'],
-            'g-recaptcha-response' => Rule::requiredIf(plugin_active('Google reCaptcha') ? true : false),
-            new Recaptcha,
+            'g-recaptcha-response' => [Rule::requiredIf((bool) plugin_active('Google reCaptcha')), new Recaptcha],
             'gender' => [Rule::requiredIf($isGender), 'in:male,female,other'],
             'username' => ['required', 'string', 'max:17', 'unique:users'],
             'country' => [Rule::requiredIf($isCountry), 'string', 'max:255'],
