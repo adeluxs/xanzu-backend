@@ -128,7 +128,15 @@ class DashboardController extends Controller
             'disabled_user' => (int) ($userStats->disabled_user ?? 0),
             'latest_user' => User::query()->latest()->limit(5)->get(),
             'latest_orders' => Order::query()->with([
-                'seller:id,first_name,last_name,email,avatar',
+                'seller' => static function ($query) {
+                    $query->select([
+                        'users.id',
+                        'users.first_name',
+                        'users.last_name',
+                        'users.email',
+                        'users.avatar',
+                    ]);
+                },
                 'buyer:id,first_name,last_name,email,avatar',
                 'items.listing:id,product_name,category_id,thumbnail',
                 'items.listing.category:id,name,slug',
