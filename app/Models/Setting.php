@@ -29,6 +29,11 @@ class Setting extends Model
      */
     public static function add($key, $val, $type = 'string')
     {
+        $key = trim((string) $key);
+        if ($key === '') {
+            return false;
+        }
+
         if (! self::tableExists()) {
             return false;
         }
@@ -47,6 +52,11 @@ class Setting extends Model
      */
     public static function has($key)
     {
+        $key = trim((string) $key);
+        if ($key === '') {
+            return false;
+        }
+
         return (bool) self::getAllSettings()->whereStrict('name', $key)->count();
     }
 
@@ -97,6 +107,11 @@ class Setting extends Model
      */
     public static function set($key, $val, $type = 'string')
     {
+        $key = trim((string) $key);
+        if ($key === '') {
+            return false;
+        }
+
         if ($setting = self::getAllSettings()->where('name', $key)->first()) {
             return $setting->update([
                 'name' => $key,
@@ -115,6 +130,11 @@ class Setting extends Model
      */
     public static function remove($key)
     {
+        $key = trim((string) $key);
+        if ($key === '') {
+            return false;
+        }
+
         if (self::has($key)) {
             return self::whereName($key)->delete();
         }
@@ -142,7 +162,16 @@ class Setting extends Model
      */
     private static function getDefinedSettingFields($section)
     {
-        return collect(config('setting')[$section]['elements']);
+        $section = trim((string) $section);
+        $configuration = config('setting', []);
+
+        if ($section === '' || ! is_array($configuration)) {
+            return collect();
+        }
+
+        $elements = $configuration[$section]['elements'] ?? [];
+
+        return collect(is_array($elements) ? $elements : []);
     }
 
     /**
@@ -167,6 +196,11 @@ class Setting extends Model
      */
     public static function get($key, $section = null, $default = null)
     {
+        $key = trim((string) $key);
+        if ($key === '') {
+            return value($default);
+        }
+
         // A setting() call is used throughout views, middleware and APIs. Do a
         // single cached collection lookup instead of has() + getAllSettings(),
         // and fall back to config while the database/table is unavailable.
@@ -218,9 +252,37 @@ class Setting extends Model
      */
     public static function getDefaultValueForField($field, $section)
     {
-        return self::getDefinedSettingFields($section)
-            ->pluck('value', 'name')
-            ->get($field);
+        $field = trim((string) $field);
+        if ($field === '') {
+            return null;
+        }
+
+        $section = trim((string) $section);
+        if ($section !== '') {
+            return self::getDefinedSettingFields($section)
+                ->pluck('value', 'name')
+                ->get($field);
+        }
+
+        // Legacy code frequently calls setting('key') without its config
+        // section. If the database record is not available yet, locate that
+        // field across the configured sections instead of indexing the config
+        // array with an empty key.
+        $configuration = config('setting', []);
+        if (! is_array($configuration)) {
+            return null;
+        }
+
+        foreach (array_keys($configuration) as $configuredSection) {
+            $definedField = self::getDefinedSettingFields($configuredSection)
+                ->firstWhere('name', $field);
+
+            if (is_array($definedField) && array_key_exists('value', $definedField)) {
+                return $definedField['value'];
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -73,11 +73,39 @@ class SettingController extends Controller
     {
 
         if ($request->ajax()) {
+            $settingName = trim((string) $request->input('name', ''));
+            if ($settingName === '') {
+                Log::warning('SETTINGS_ASSET_DELETE_INVALID_NAME', [
+                    'request_id' => $request->attributes->get('request_id')
+                        ?: $request->header('X-Request-ID')
+                        ?: (string) Str::uuid(),
+                    'admin_id' => auth('admin')->id(),
+                    'path' => $request->path(),
+                    'ip' => $request->ip(),
+                ]);
 
-            $path = Setting::get($request->input('name'));
+                return response()->json([
+                    'success' => false,
+                    'message' => __('The setting name is required.'),
+                ], 422);
+            }
 
-            if (file_exists(base_path('assets/' . $path))) {
-                @unlink(base_path('assets/' . $path));
+            // Delete only the value actually stored in the database. Using the
+            // config fallback here could remove a bundled default asset when a
+            // setting record has not been created yet.
+            $path = Setting::query()->where('name', $settingName)->value('val');
+            $assetsDirectory = realpath(base_path('assets'));
+            $assetPath = is_string($path) && $path !== ''
+                ? realpath(base_path('assets/' . ltrim($path, '/\\')))
+                : false;
+
+            if (
+                $assetsDirectory !== false &&
+                $assetPath !== false &&
+                Str::startsWith($assetPath, $assetsDirectory . DIRECTORY_SEPARATOR) &&
+                is_file($assetPath)
+            ) {
+                @unlink($assetPath);
             }
 
             return response()->json([
@@ -93,8 +121,29 @@ class SettingController extends Controller
             ]);
             $rules = [];
         } else {
+            $section = trim((string) $request->input('section', ''));
+            $configuredSections = config('setting', []);
 
-            $section = $request->section;
+            if (
+                $section === '' ||
+                ! is_array($configuredSections) ||
+                ! array_key_exists($section, $configuredSections)
+            ) {
+                Log::warning('SETTINGS_UPDATE_INVALID_SECTION', [
+                    'request_id' => $request->attributes->get('request_id')
+                        ?: $request->header('X-Request-ID')
+                        ?: (string) Str::uuid(),
+                    'admin_id' => auth('admin')->id(),
+                    'section' => $section,
+                    'path' => $request->path(),
+                    'ip' => $request->ip(),
+                ]);
+
+                return back()
+                    ->withErrors(['section' => __('The settings section is missing or invalid.')])
+                    ->withInput();
+            }
+
             $rules = Setting::getValidationRules($section);
         }
         $data = $this->validate($request, $rules);
