@@ -48,8 +48,12 @@ stores its existing public assets in the root `assets` directory, so create the
 public asset link before serving it:
 
 ```bash
-ln -s ../assets public/assets
+php artisan app:link-public-assets
 ```
+
+Set `ASSET_URL="${APP_URL}/assets"` in `.env`, then run
+`php artisan optimize:clear`. On MozaPay production, generated image URLs will
+resolve below `https://mozapay.app/backend/assets/...`.
 
 The CyberPanel deployment commands and MozaPay API checks are documented in
 `CYBERPANEL_MOZAPAY_APP_DEPLOYMENT.md`.

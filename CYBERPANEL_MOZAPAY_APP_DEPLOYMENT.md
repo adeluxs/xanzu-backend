@@ -154,8 +154,22 @@ directory into the website document root. First expose the application's
 public assets from inside it:
 
 ```bash
-cd /home/mozapay.app/backend/public
-ln -s ../assets assets
+cd /home/mozapay.app/backend
+/usr/local/lsws/lsphp82/bin/php artisan app:link-public-assets
+```
+
+The backend `.env` must contain both values below so Laravel-generated image
+URLs point at the linked asset directory instead of the Next.js document root:
+
+```dotenv
+APP_URL=https://mozapay.app/backend
+ASSET_URL=https://mozapay.app/backend/assets
+```
+
+After changing either value, clear Laravel's cached configuration:
+
+```bash
+/usr/local/lsws/lsphp82/bin/php artisan optimize:clear
 ```
 
 Then ensure `/home/mozapay.app/public_html/backend` does not already contain

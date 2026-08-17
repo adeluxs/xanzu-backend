@@ -68,7 +68,10 @@ return [
 
     'frontend_url' => env('FRONTEND_URL', 'https://mozapay.app'),
 
-    'asset_url' => env('ASSET_URL'),
+    // Existing browser assets live in the project-level `assets` directory,
+    // which production exposes through public/assets.
+    'asset_url' => env('ASSET_URL')
+        ?: rtrim(env('APP_URL', 'https://mozapay.app/backend'), '/').'/assets',
 
     /*
     |--------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\LinkPublicAssetsCommand;
 use App\Console\Commands\ServiceAccessCommand;
 use App\Http\Middleware\CheckDeactivate;
 use App\Http\Middleware\ApiRequestId;
@@ -30,6 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withCommands([
         ServiceAccessCommand::class,
+        LinkPublicAssetsCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // Keep every API list endpoint bounded, even when a client sends an
