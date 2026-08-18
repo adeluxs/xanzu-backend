@@ -49,9 +49,9 @@
                                             <option value="" selected>{{ __('Select Country') }}</option>
                                             @foreach (getCountries() as $country)
                                                 <option value="{{ $country['name'] }}"
-                                                    data-currency-code="{{ $country['code'] }}"
+                                                    data-country-code="{{ $country['code'] }}"
                                                     data-dial-code="{{ $country['dial_code'] }}"
-                                                    @selected(old('country') == $country['name'])>
+                                                    @selected(old('name') == $country['name'])>
                                                     {{ $country['name'] }}</option>
                                             @endforeach
                                         </select>
@@ -60,16 +60,23 @@
 
                                 <div class="col-xl-6">
                                     <div class="site-input-groups">
-                                        <label class="box-input-label" for="">{{ __('Currency Code:') }}</label>
-                                        <input type="text" class="box-input" name="currency_code"
-                                            value="{{ old('currency_code') }}" required readonly />
+                                        <label class="box-input-label" for="country-code">{{ __('Country Code:') }}</label>
+                                        <input type="text" class="box-input" id="country-code"
+                                            value="{{ old('code') }}" readonly />
                                     </div>
                                 </div>
                                 <div class="col-xl-6">
                                     <div class="site-input-groups">
-                                        <label class="box-input-label" for="">{{ __('Dial Code:') }}</label>
-                                        <input type="text" class="box-input" name="dial_code"
-                                            value="{{ old('dial_code') }}" required readonly />
+                                        <label class="box-input-label" for="currency-code">{{ __('Currency Code:') }}</label>
+                                        <input type="text" class="box-input text-uppercase" id="currency-code" name="currency_code"
+                                            value="{{ old('currency_code') }}" maxlength="10" placeholder="{{ __('e.g. NGN, USD, GBP') }}" required />
+                                    </div>
+                                </div>
+                                <div class="col-xl-6">
+                                    <div class="site-input-groups">
+                                        <label class="box-input-label" for="dial-code">{{ __('Dial Code:') }}</label>
+                                        <input type="text" class="box-input" id="dial-code"
+                                            value="{{ old('dial_code') }}" readonly />
                                     </div>
                                 </div>
 
@@ -81,7 +88,7 @@
                                                 1 {{ $currency }} =
                                             </span>
                                             <input type="text" name="own_rate" data-validate="decimal"
-                                                class="form-control" value="">
+                                                class="form-control" value="{{ old('own_rate') }}">
                                             <span class="input-group-text" id="target-currency">
                                                 {{ old('currency_code') }}
                                             </span>
@@ -94,9 +101,10 @@
                                         <label class="box-input-label" for="">{{ __('Status:') }}</label>
                                         <div class="switch-field">
                                             <input type="radio" id="status-active" name="status" value="1"
-                                                checked />
+                                                @checked(old('status', 1) == 1) />
                                             <label for="status-active">{{ __('Active') }}</label>
-                                            <input type="radio" id="status-inactive" name="status" value="0" />
+                                            <input type="radio" id="status-inactive" name="status" value="0"
+                                                @checked(old('status') === '0') />
                                             <label for="status-inactive">{{ __('Inactive') }}</label>
                                         </div>
                                     </div>
@@ -121,11 +129,16 @@
             "use strict";
 
             $('#country').on('change', function() {
-                var currencyCode = $(this).find(':selected').data('currency-code');
+                var countryCode = $(this).find(':selected').data('country-code');
                 var dialCode = $(this).find(':selected').data('dial-code');
-                $('input[name="currency_code"]').val(currencyCode);
-                $('input[name="dial_code"]').val(dialCode);
+                $('#country-code').val(countryCode || '');
+                $('#dial-code').val(dialCode || '');
+            });
+            $('#country').trigger('change');
 
+            $('#currency-code').on('input', function() {
+                var currencyCode = ($(this).val() || '').toUpperCase();
+                $(this).val(currencyCode);
                 $('#target-currency').text(currencyCode);
             });
         });

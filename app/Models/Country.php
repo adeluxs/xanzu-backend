@@ -8,8 +8,10 @@ class Country extends Model
 {
     protected $fillable = [
         'name',
+        'code',
         'currency_code',
         'dial_code',
+        'image',
         'own_rate',
         'status',
     ];

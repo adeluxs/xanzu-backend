@@ -8,7 +8,9 @@ use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 class CountryController implements HasMiddleware
 {
@@ -51,37 +53,62 @@ class CountryController implements HasMiddleware
      */
     public function store(Request $request)
     {
+        $countryNames = collect(getCountries())->pluck('name')->filter()->values()->all();
+
         $validator = Validator::make($request->all(), [
-            'name' => 'required|unique:countries,name',
+            'name' => ['required', Rule::in($countryNames), Rule::unique('countries', 'name')],
             'currency_code' => 'required|string|max:10',
-            'dial_code' => 'required|string|max:10',
-            'image' => 'nullable|image|mimes:png,jpg,jpeg,gif,webp',
-            'own_rate' => 'required|numeric',
+            'image' => 'required|image|mimes:png,jpg,jpeg,gif,webp|max:5120',
+            'own_rate' => 'required|numeric|min:0',
             'status' => 'required|boolean',
         ]);
 
         if ($validator->fails()) {
             notify()->error($validator->errors()->first());
 
-            return back();
+            return back()->withErrors($validator)->withInput();
         }
 
+        $countryData = collect(getCountries())->firstWhere('name', $request->string('name')->toString());
+        $countryCode = strtoupper((string) data_get($countryData, 'code', ''));
+        $dialCode = (string) data_get($countryData, 'dial_code', '');
+
+        if ($countryCode === '' || $dialCode === '') {
+            notify()->error(__('Unable to resolve the selected country details. Please select the country again.'));
+
+            return back()->withInput();
+        }
+
+        $imagePath = null;
+
         try {
-            $imagePath = null;
-            if ($request->hasFile('image')) {
-                $imagePath = $this->imageUploadTrait($request->file('image'), null, 'country/');
-            }
+            $imagePath = $this->imageUploadTrait($request->file('image'), null, 'country/');
 
             Country::create([
-                'name' => $request->get('name'),
-                'currency_code' => $request->get('currency_code'),
+                'name' => $request->string('name')->toString(),
+                'code' => $countryCode,
+                'currency_code' => strtoupper($request->string('currency_code')->trim()->toString()),
                 'image' => $imagePath,
                 'own_rate' => $request->get('own_rate'),
                 'status' => $request->boolean('status'),
-                'dial_code' => $request->get('dial_code'),
+                'dial_code' => $dialCode,
             ]);
         } catch (Exception $e) {
-            notify()->error(__('Country creation failed!'));
+            if ($imagePath) {
+                $this->delete($imagePath);
+            }
+
+            Log::error('COUNTRY_CREATE_FAILED', [
+                'admin_user_id' => auth()->id(),
+                'country_name' => $request->get('name'),
+                'country_code' => $countryCode,
+                'currency_code' => $request->get('currency_code'),
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+            report($e);
+
+            notify()->error(__('Country creation failed! Please check the entered information and try again.'));
 
             return back()->withInput();
         }
@@ -106,39 +133,73 @@ class CountryController implements HasMiddleware
      */
     public function update(Request $request, string $id)
     {
+        $country = Country::findOrFail($id);
+        $countryNames = collect(getCountries())->pluck('name')->filter()->values()->all();
+
         $validator = Validator::make($request->all(), [
-            'name' => 'required|unique:countries,name,'.$id,
+            'name' => ['required', Rule::in($countryNames), Rule::unique('countries', 'name')->ignore($country->id)],
             'currency_code' => 'required|string|max:10',
-            'image' => 'nullable|image|mimes:png,jpg,jpeg,gif,webp',
-            'own_rate' => 'required|numeric',
+            'image' => 'nullable|image|mimes:png,jpg,jpeg,gif,webp|max:5120',
+            'own_rate' => 'required|numeric|min:0',
             'status' => 'required|boolean',
-            'dial_code' => 'required|string|max:10',
         ]);
 
         if ($validator->fails()) {
             notify()->error($validator->errors()->first());
 
-            return back();
+            return back()->withErrors($validator)->withInput();
         }
 
-        $country = Country::findOrFail($id);
+        $countryData = collect(getCountries())->firstWhere('name', $request->string('name')->toString());
+        $countryCode = strtoupper((string) data_get($countryData, 'code', ''));
+        $dialCode = (string) data_get($countryData, 'dial_code', '');
+
+        if ($countryCode === '' || $dialCode === '') {
+            notify()->error(__('Unable to resolve the selected country details. Please select the country again.'));
+
+            return back()->withInput();
+        }
+
+        $oldImagePath = $country->image;
+        $newImagePath = null;
 
         try {
-            $imagePath = $country->image;
             if ($request->hasFile('image')) {
-                $imagePath = $this->imageUploadTrait($request->file('image'), $country->image, 'country/');
+                // Store the replacement first. Delete the previous flag only after
+                // the database update succeeds so a failed update cannot break it.
+                $newImagePath = $this->imageUploadTrait($request->file('image'), null, 'country/');
             }
 
             $country->update([
-                'name' => $request->get('name'),
-                'image' => $imagePath,
-                'currency_code' => $request->get('currency_code'),
+                'name' => $request->string('name')->toString(),
+                'code' => $countryCode,
+                'image' => $newImagePath ?: $oldImagePath,
+                'currency_code' => strtoupper($request->string('currency_code')->trim()->toString()),
                 'own_rate' => $request->get('own_rate'),
                 'status' => $request->boolean('status'),
-                'dial_code' => $request->get('dial_code'),
+                'dial_code' => $dialCode,
             ]);
+
+            if ($newImagePath && $oldImagePath && $newImagePath !== $oldImagePath) {
+                $this->delete($oldImagePath);
+            }
         } catch (Exception $e) {
-            notify()->error(__('Country update failed!'));
+            if ($newImagePath) {
+                $this->delete($newImagePath);
+            }
+
+            Log::error('COUNTRY_UPDATE_FAILED', [
+                'admin_user_id' => auth()->id(),
+                'country_id' => $country->id,
+                'country_name' => $request->get('name'),
+                'country_code' => $countryCode,
+                'currency_code' => $request->get('currency_code'),
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+            report($e);
+
+            notify()->error(__('Country update failed! Please check the entered information and try again.'));
 
             return back()->withInput();
         }

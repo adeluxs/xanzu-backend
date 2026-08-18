@@ -50,9 +50,9 @@
                                             <option value="" selected>{{ __('Select Country') }}</option>
                                             @foreach (getCountries() as $countryTwo)
                                                 <option value="{{ $countryTwo['name'] }}"
-                                                    data-currency-code="{{ $countryTwo['code'] }}"
+                                                    data-country-code="{{ $countryTwo['code'] }}"
                                                     data-dial-code="{{ $countryTwo['dial_code'] }}"
-                                                    @selected($country->name == $countryTwo['name'])>
+                                                    @selected(old('name', $country->name) == $countryTwo['name'])>
                                                     {{ $countryTwo['name'] }}</option>
                                             @endforeach
                                         </select>
@@ -61,16 +61,23 @@
 
                                 <div class="col-xl-6">
                                     <div class="site-input-groups">
-                                        <label class="box-input-label" for="">{{ __('Currency Code:') }}</label>
-                                        <input type="text" class="box-input" name="currency_code"
-                                            value="{{ $country->currency_code }}" required readonly />
+                                        <label class="box-input-label" for="country-code">{{ __('Country Code:') }}</label>
+                                        <input type="text" class="box-input" id="country-code"
+                                            value="{{ old('code', $country->code) }}" readonly />
                                     </div>
                                 </div>
                                 <div class="col-xl-6">
                                     <div class="site-input-groups">
-                                        <label class="box-input-label" for="">{{ __('Dial Code:') }}</label>
-                                        <input type="text" class="box-input" name="dial_code"
-                                            value="{{ $country->dial_code }}" required readonly />
+                                        <label class="box-input-label" for="currency-code">{{ __('Currency Code:') }}</label>
+                                        <input type="text" class="box-input text-uppercase" id="currency-code" name="currency_code"
+                                            value="{{ old('currency_code', $country->currency_code) }}" maxlength="10" required />
+                                    </div>
+                                </div>
+                                <div class="col-xl-6">
+                                    <div class="site-input-groups">
+                                        <label class="box-input-label" for="dial-code">{{ __('Dial Code:') }}</label>
+                                        <input type="text" class="box-input" id="dial-code"
+                                            value="{{ old('dial_code', $country->dial_code) }}" readonly />
                                     </div>
                                 </div>
 
@@ -124,11 +131,16 @@
             "use strict";
 
             $('#country').on('change', function() {
-                var currencyCode = $(this).find(':selected').data('currency-code');
+                var countryCode = $(this).find(':selected').data('country-code');
                 var dialCode = $(this).find(':selected').data('dial-code');
-                $('input[name="currency_code"]').val(currencyCode);
-                $('input[name="dial_code"]').val(dialCode);
+                $('#country-code').val(countryCode || '');
+                $('#dial-code').val(dialCode || '');
+            });
+            $('#country').trigger('change');
 
+            $('#currency-code').on('input', function() {
+                var currencyCode = ($(this).val() || '').toUpperCase();
+                $(this).val(currencyCode);
                 $('#target-currency').text(currencyCode);
             });
         });
