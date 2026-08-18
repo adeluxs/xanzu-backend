@@ -5010,3 +5010,37 @@ img {
 .mb-n15 {
     margin-bottom: -15px;
 }
+/* Admin dashboard chart containers */
+.dashboard-chart-body {
+    position: relative;
+    min-height: 360px;
+}
+
+.dashboard-chart-body canvas {
+    width: 100% !important;
+    height: 360px !important;
+}
+
+.dashboard-chart-error {
+    min-height: 320px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: #6c757d;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 20px;
+}
+
+@media (max-width: 767px) {
+    .dashboard-chart-body,
+    .dashboard-chart-body canvas {
+        min-height: 300px;
+        height: 300px !important;
+    }
+
+    .dashboard-chart-error {
+        min-height: 260px;
+    }
+}

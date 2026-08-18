@@ -47,7 +47,7 @@ class DashboardController extends Controller
             $dateArray,
         );
         $orderStatistics = $this->dailyOrderSum($startDate, $endDate, false, $dateArray);
-        $bnplOrderStatistics = $this->dailyBnplCount($startDate, $endDate, $dateArray);
+        $bnplOrderStatistics = $this->dailyOrderSum($startDate, $endDate, true, $dateArray);
 
         // AJAX chart refresh should not execute the expensive non-chart
         // dashboard queries (latest orders, geo breakdown, global counters).
@@ -119,6 +119,19 @@ class DashboardController extends Controller
             ->groupBy('status')
             ->pluck('analysis_count', 'status');
 
+        $bnplOrderAnalysis = Order::query()
+            ->where('is_bnpl', true)
+            ->whereBetween('order_date', [$startDate, $endDate])
+            ->select('status', DB::raw('COUNT(*) AS analysis_count'))
+            ->groupBy('status')
+            ->pluck('analysis_count', 'status')
+            ->mapWithKeys(static function ($count, $status) {
+                $label = ucwords(str_replace('_', ' ', (string) $status));
+
+                return [$label => (int) $count];
+            })
+            ->toArray();
+
         $data = [
             'withdraw_count' => (int) ($transactionStats->pending_withdraw ?? 0),
             'kyc_count' => (int) ($userStats->pending_kyc ?? 0),
@@ -153,6 +166,7 @@ class DashboardController extends Controller
             'withdraw_statistics' => $withdrawStatistics,
             'listing_order_statistics' => $orderStatistics,
             'bnpl_order_statistics' => $bnplOrderStatistics,
+            'bnpl_order_analysis' => $bnplOrderAnalysis,
             'start_date' => $startDate->format('m/d/Y'),
             'end_date' => $endDate->format('m/d/Y'),
             'deposit_bonus' => (float) ($transactionStats->deposit_bonus ?? 0),
@@ -212,7 +226,7 @@ class DashboardController extends Controller
 
         arsort($counts);
 
-        return $counts;
+        return array_slice($counts, 0, 5, true);
     }
 
     private function dateWindow(Request $request): array

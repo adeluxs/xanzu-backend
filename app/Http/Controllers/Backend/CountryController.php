@@ -155,7 +155,7 @@ class CountryController implements HasMiddleware
     {
         $country = Country::findOrFail($id);
         if ($country->image !== null) {
-            self::fileDelete($country->image);
+            $this->delete($country->image);
         }
 
         $country->delete();

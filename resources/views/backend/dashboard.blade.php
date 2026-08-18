@@ -32,7 +32,7 @@
                                             value="{{ $data['start_date'] . ' - ' . $data['end_date'] }}" />
                                     </div>
                                 </div>
-                                <div class="site-card-body">
+                                <div class="site-card-body dashboard-chart-body">
                                     <canvas id="statisticsChart"></canvas>
                                 </div>
                             </div>
@@ -47,7 +47,7 @@
                                 <div class="site-card-header">
                                     <h3 class="title">{{ __('BNPL Order Analysis') }}</h3>
                                 </div>
-                                <div class="site-card-body">
+                                <div class="site-card-body dashboard-chart-body">
                                     <canvas id="bnplOrderChart"></canvas>
                                 </div>
                             </div>
@@ -62,7 +62,7 @@
                                 <div class="site-card-header">
                                     <h3 class="title">{{ __('Top Country Statistics') }}</h3>
                                 </div>
-                                <div class="site-card-body">
+                                <div class="site-card-body dashboard-chart-body">
                                     <canvas id="countryChart"></canvas>
                                 </div>
                             </div>
@@ -77,7 +77,7 @@
                                 <div class="site-card-header">
                                     <h3 class="title">{{ __('Top Browser Statistics') }}</h3>
                                 </div>
-                                <div class="site-card-body">
+                                <div class="site-card-body dashboard-chart-body">
                                     <canvas id="browserChart"></canvas>
                                 </div>
                             </div>
@@ -92,7 +92,7 @@
                                 <div class="site-card-header">
                                     <h3 class="title">{{ __('Top OS Statistics') }}</h3>
                                 </div>
-                                <div class="site-card-body">
+                                <div class="site-card-body dashboard-chart-body">
                                     <canvas id="osChart"></canvas>
                                 </div>
                             </div>
